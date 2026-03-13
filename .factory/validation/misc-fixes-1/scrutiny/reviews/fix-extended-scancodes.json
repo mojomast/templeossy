@@ -1,0 +1,33 @@
+{
+  "featureId": "fix-extended-scancodes",
+  "reviewedAt": "2026-03-13T04:45:00.000Z",
+  "commitId": "20a666e",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, correct fix. All 14 extended PS/2 scancodes updated to QEMU key number convention (base | 0x80). Arithmetic verified: every value is the original PS/2 Set 1 base scancode OR'd with 0x80. Numpad keys correctly retain their non-extended base codes, so numpad vs. navigation/arrow key disambiguation now works as intended. Comments inline with each entry clearly document the derivation (e.g., '// Extended: 0x48 | 0x80'). Tests updated for all 10 previously-tested keys (4 arrow, 6 nav) and 4 new tests added for ControlRight, AltRight, NumpadEnter, NumpadDivide. No functional issues found.",
+    "issues": [
+      {
+        "file": "src/input.ts",
+        "line": 1,
+        "severity": "non_blocking",
+        "description": "Top-of-file doc comment says 'Maps KeyboardEvent.code to PS/2 Set 1 scancodes' and the SCANCODE_MAP JSDoc says the same. Now that extended keys use QEMU key numbers (base | 0x80) rather than raw PS/2 scan codes, this is slightly misleading. Consider updating to mention 'QEMU key numbers (PS/2 Set 1 based, with 0x80 bit for extended keys)' for accuracy."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The SCANCODE_MAP now uses two different encoding conventions: raw PS/2 Set 1 scancodes for standard keys, and QEMU key numbers (base | 0x80) for extended keys. This dual convention is not documented in AGENTS.md. The distinction matters for any future key mapping work — a developer adding new extended keys (e.g., right Windows key, multimedia keys) needs to know to apply the 0x80 bit.",
+      "evidence": "src/input.ts lines 108-145: standard keys use raw PS/2 codes (e.g., ControlLeft: 0x1D) while extended keys use QEMU key numbers (e.g., ControlRight: 0x9D). The inline comments explain the derivation per-entry but there's no top-level documentation of the convention."
+    },
+    {
+      "area": "skills",
+      "observation": "The frontend-worker SKILL.md keyboard input section says 'Map KeyboardEvent.code to QEMU scancodes (PS/2 Set 1)' without mentioning the 0x80 bit convention for extended keys. This could lead future workers to repeat the original bug (using raw PS/2 codes for extended keys).",
+      "evidence": "SKILL.md 'For keyboard input' section: 'Map KeyboardEvent.code to QEMU scancodes (PS/2 Set 1)'. Should specify that extended keys (arrow, nav, right modifiers, NumpadEnter, NumpadDivide) require the 0x80 bit OR'd onto the base scancode."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. All 14 extended scancodes correctly updated with verified arithmetic (base | 0x80). Tests comprehensive — 2 existing tests updated, 4 new tests added. No bugs, no missed edge cases. One non-blocking documentation nit: source comments and SKILL.md could clarify the dual encoding convention (raw PS/2 for standard keys, QEMU key numbers with 0x80 bit for extended keys)."
+}

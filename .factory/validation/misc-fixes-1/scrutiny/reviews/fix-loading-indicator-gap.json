@@ -1,0 +1,22 @@
+{
+  "featureId": "fix-loading-indicator-gap",
+  "reviewedAt": "2026-03-13T04:45:00.000Z",
+  "commitId": "c285eb5",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, well-scoped fix for VAL-DISP-006. Added show() and hide() methods to LoadingUI class, wired them into main.ts at the correct lifecycle points (Start click and onFirstFrame), and removed the now-unused direct DOM reference. Tests are thorough (8 new tests covering show/hide methods and full VAL-DISP-006 flow). Implementation follows existing patterns (fade-out + setTimeout for hidden class). One minor non-blocking observation: hide() uses a raw setTimeout that isn't canceled if show() is called within 500ms, creating a theoretical race condition — but this matches the pre-existing updatePhase('ready') pattern and is not triggerable in the actual user flow (Start click → first VGA frame takes minutes, not milliseconds).",
+    "issues": [
+      {
+        "file": "src/loading.ts",
+        "line": 152,
+        "severity": "non_blocking",
+        "description": "hide() schedules a setTimeout to add 'hidden' class after 500ms. If show() is called before that timeout fires, the pending timeout will still add 'hidden' and unexpectedly re-hide the overlay. This is a theoretical race condition. In practice it's not triggerable in the current usage (the gap between hide and the next show is always much longer than 500ms), and it mirrors the same pattern in updatePhase('ready'). A future-proof fix would store the timeout ID and clear it in show(), but this is not blocking."
+      }
+    ]
+  },
+  "sharedStateObservations": [],
+  "addressesFailureFrom": null,
+  "summary": "Feature fix-loading-indicator-gap passes review. The implementation correctly bridges the visual gap between Start click and first VGA frame by re-showing the loading overlay with 'Booting TempleOS...' via a new show() method, and hiding it via hide() when DisplayRenderer.onFirstFrame fires. Code is clean, follows existing patterns, removes unused variables, and has comprehensive test coverage (8 new tests). One non-blocking theoretical race condition noted in hide()'s setTimeout pattern, matching the pre-existing code style."
+}

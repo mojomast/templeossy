@@ -1,0 +1,39 @@
+{
+  "milestone": "misc-fixes-1",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "npm test", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "npm run typecheck", "exitCode": 0 },
+    "lint": { "passed": true, "command": "npm run lint", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add to Key Technical Details: 'Extended PS/2 keys (arrow, navigation, right modifiers, NumpadEnter, NumpadDivide) use QEMU key numbers with 0x80 bit OR'd onto the base scancode. Standard keys use raw PS/2 Set 1 scancodes unchanged. See .factory/library/architecture.md for the full mapping.'",
+      "evidence": "Feature fix-extended-scancodes revealed that the original SCANCODE_MAP used raw PS/2 codes for extended keys, causing arrow keys to map to numpad keys. The dual encoding convention (raw PS/2 for standard keys, base|0x80 for extended) is documented in library/architecture.md but not mentioned in AGENTS.md where workers first learn about keyboard input.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills",
+      "suggestion": "Update frontend-worker SKILL.md keyboard input section to say 'Map KeyboardEvent.code to QEMU key numbers — standard keys match PS/2 Set 1 scancodes; extended keys (E0 prefix) need base scancode OR'd with 0x80. See .factory/library/architecture.md for reference.'",
+      "evidence": "The current skill says 'Map KeyboardEvent.code to QEMU scancodes (PS/2 Set 1)' without mentioning the 0x80 convention, which could lead future workers to repeat the original bug.",
+      "isSystemic": false
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "The SCANCODE_MAP dual encoding convention is not documented",
+      "reason": "already-documented — .factory/library/architecture.md has a full 'QEMU Key Numbers vs PS/2 Scancodes' section with all key mappings and the 0x80 rule. The observation correctly notes the convention exists but the library already captures it. The suggested AGENTS.md and skill updates above are normative guidance that belongs to the orchestrator to decide."
+    }
+  ],
+  "previousRound": null
+}
