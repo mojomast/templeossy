@@ -119,11 +119,11 @@ describe('EmulatorLoader', () => {
     expect(loader.error).toBeNull();
   });
 
-  it('buildModuleConfig returns valid configuration (TempleOS default)', () => {
+  it('buildModuleConfig returns valid configuration (Shrine default)', () => {
     const loader = new EmulatorLoader();
     const config = loader.buildModuleConfig();
 
-    // Check QEMU arguments — default is TempleOS
+    // Check QEMU arguments — default is Shrine live CD
     const args = config.arguments as string[];
     expect(args).toContain('-m');
     expect(args).toContain('512M');
@@ -132,14 +132,15 @@ describe('EmulatorLoader', () => {
     expect(args).toContain('-display');
     expect(args).toContain('none');
     expect(args).toContain('-cdrom');
-    expect(args).toContain('/pack/TempleOSCDV5.03.ISO');
-    expect(args).toContain('-hda');
-    expect(args).toContain('/pack/disk.img');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
     expect(args).toContain('-L');
     expect(args).toContain('/pack');
     expect(args).toContain('-nic');
     expect(args).toContain('none');
     expect(args).toContain('-no-reboot');
+    // No writable disk (persistence disabled)
+    expect(args).not.toContain('-hda');
+    expect(args).not.toContain('/pack/disk.img');
   });
 
   it('buildModuleConfig has locateFile pointing to /emulator/', () => {
@@ -163,7 +164,7 @@ describe('EmulatorLoader', () => {
     expect(typeof config.printErr).toBe('function');
   });
 
-  it('buildModuleConfig provides a PTY bridge for QEMU runtime init', () => {
+  it('buildModuleConfig provides a no-op PTY stub for QEMU runtime init', () => {
     const loader = new EmulatorLoader();
     const config = loader.buildModuleConfig();
     const pty = config.pty as {
@@ -241,22 +242,16 @@ describe('EmulatorLoader', () => {
     expect(args).not.toContain('-boot');
   });
 
-  it('templeos mode uses -cdrom and -boot args', () => {
+  it('templeos mode uses -cdrom with Shrine ISO (no -boot, no -hda)', () => {
     const loader = new EmulatorLoader('templeos');
     const args = loader.getQemuArgs();
     expect(args).toContain('-cdrom');
-    expect(args).toContain('/pack/TempleOSCDV5.03.ISO');
-    expect(args).toContain('-boot');
-    expect(args).toContain('d');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
+    // Persistence disabled: no -hda, no -boot
+    expect(args).not.toContain('-hda');
+    expect(args).not.toContain('-boot');
     expect(args).not.toContain('-kernel');
     expect(args).not.toContain('-initrd');
-  });
-
-  it('templeos mode includes writable disk image (-hda)', () => {
-    const loader = new EmulatorLoader('templeos');
-    const args = loader.getQemuArgs();
-    expect(args).toContain('-hda');
-    expect(args).toContain('/pack/disk.img');
   });
 
   it('templeos mode includes -no-reboot for safety', () => {
@@ -265,12 +260,9 @@ describe('EmulatorLoader', () => {
     expect(args).toContain('-no-reboot');
   });
 
-  it('templeos mode uses IDE disk controller (no virtio)', () => {
+  it('templeos mode does not include virtio args', () => {
     const loader = new EmulatorLoader('templeos');
     const args = loader.getQemuArgs();
-    // -hda implies IDE disk (default pc/i440FX machine)
-    expect(args).toContain('-hda');
-    // Should not contain virtio-related args
     const joined = args.join(' ');
     expect(joined).not.toContain('virtio');
   });
@@ -335,38 +327,20 @@ describe('EmulatorLoader', () => {
     expect(loader.bootOrder).toBe('c');
   });
 
-  it('getQemuArgs uses boot order "d" by default', () => {
+  it('getQemuArgs does not include -boot (CD-only, no disk)', () => {
     const loader = new EmulatorLoader('templeos');
     const args = loader.getQemuArgs();
-    const bootIdx = args.indexOf('-boot');
-    expect(bootIdx).toBeGreaterThanOrEqual(0);
-    expect(args[bootIdx + 1]).toBe('d');
+    expect(args).not.toContain('-boot');
   });
 
-  it('getQemuArgs reflects updated boot order "c"', () => {
+  it('boot order property can still be read/written', () => {
     const loader = new EmulatorLoader('templeos');
+    expect(loader.bootOrder).toBe('d');
     loader.bootOrder = 'c';
-    const args = loader.getQemuArgs();
-    const bootIdx = args.indexOf('-boot');
-    expect(bootIdx).toBeGreaterThanOrEqual(0);
-    expect(args[bootIdx + 1]).toBe('c');
+    expect(loader.bootOrder).toBe('c');
   });
 
-  // ─── Disk image data injection tests ──────────────────────────────────
-
-  it('diskImageData defaults to null', () => {
-    const loader = new EmulatorLoader('templeos');
-    // readDiskImage returns null when module not loaded
-    expect(loader.readDiskImage()).toBeNull();
-  });
-
-  it('diskImageData can be set for resume', () => {
-    const loader = new EmulatorLoader('templeos');
-    const data = new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF]);
-    loader.diskImageData = data;
-    // Setting diskImageData doesn't affect readDiskImage (which reads from Emscripten FS)
-    // but does affect the preRun configuration in buildModuleConfig
-  });
+  // ─── Disk image tests (persistence disabled) ──────────────────────────
 
   it('waits for runtime initialization before becoming ready', async () => {
     const loader = new EmulatorLoader('templeos');

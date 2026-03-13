@@ -19,13 +19,13 @@ describe('Build Artifacts', () => {
     expect(stats.size).toBeGreaterThan(1000);
   });
 
-  it('qemu-system-x86_64.data exists and contains BIOS + ISO', () => {
+  it('qemu-system-x86_64.data exists and contains BIOS + Shrine ISO', () => {
     const file = resolve(PUBLIC_EMULATOR, 'qemu-system-x86_64.data');
     expect(existsSync(file)).toBe(true);
     const stats = statSync(file);
-    // The .data file should be at least as large as the ISO (17,817,600 bytes)
+    // The .data file should be at least as large as the Shrine ISO (3,844,096 bytes)
     // Uncompressed (no LZ4) — BIOS files add ~312KB
-    expect(stats.size).toBeGreaterThanOrEqual(17 * 1024 * 1024);
+    expect(stats.size).toBeGreaterThanOrEqual(3 * 1024 * 1024);
   });
 
   it('load.js exists and is non-empty', () => {
@@ -69,12 +69,12 @@ describe('BIOS Files in Source', () => {
   });
 });
 
-describe('TempleOS ISO', () => {
-  it('TempleOSCDV5.03.ISO exists with correct size (17,817,600 bytes)', () => {
-    const file = resolve(__dirname, '../assets/TempleOSCDV5.03.ISO');
+describe('Shrine ISO', () => {
+  it('Shrine-v5051.iso exists with correct size (3,844,096 bytes)', () => {
+    const file = resolve(__dirname, '../assets/Shrine-v5051.iso');
     expect(existsSync(file)).toBe(true);
     const stats = statSync(file);
-    expect(stats.size).toBe(17817600);
+    expect(stats.size).toBe(3844096);
   });
 });
 
@@ -119,9 +119,9 @@ describe('Load.js Content', () => {
     expect(content).toContain('/pack/linuxboot_dma.bin');
   });
 
-  it('maps TempleOS ISO to /pack/ path', async () => {
+  it('maps Shrine ISO to /pack/ path', async () => {
     const { readFileSync } = await import('fs');
     const content = readFileSync(resolve(PUBLIC_EMULATOR, 'load.js'), 'utf-8');
-    expect(content).toContain('/pack/TempleOSCDV5.03.ISO');
+    expect(content).toContain('/pack/Shrine-v5051.iso');
   });
 });

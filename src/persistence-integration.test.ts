@@ -114,16 +114,17 @@ describe('Flow 1: Return visitor resume', () => {
     expect(diskData).not.toBeNull();
     expect(diskData!.length).toBe(8);
 
-    // Step 4: Configure emulator with disk data
+    // Step 4: Configure emulator (persistence disabled — CD-only, no disk)
     const loader = new EmulatorLoader('templeos');
     loader.bootOrder = getBootOrderFlag(bootMedium);
-    loader.diskImageData = diskData;
 
-    // Verify boot order in QEMU args
+    // With persistence disabled the QEMU args always reflect live CD mode
     const args = loader.getQemuArgs();
-    const bootIdx = args.indexOf('-boot');
-    expect(args[bootIdx + 1]).toBe('c'); // Boot from disk
-    expect(args).toContain('-hda'); // Disk image attached
+    expect(args).toContain('-cdrom');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
+    // No -hda or -boot in CD-only mode
+    expect(args).not.toContain('-hda');
+    expect(args).not.toContain('-boot');
   });
 
   it('falls back to CD boot if disk load fails', async () => {
@@ -154,10 +155,9 @@ describe('Flow 1: Return visitor resume', () => {
     expect(getBootOrderFlag(actualBootMedium)).toBe('d');
   });
 
-  it('resume with saved disk configures EmulatorLoader correctly', async () => {
+  it('resume with saved disk: EmulatorLoader still boots live CD (persistence disabled)', async () => {
     const storage = createMockStorage();
     const diskImage = new Uint8Array(1024);
-    // Write some non-zero data to simulate an installed disk
     diskImage.fill(0xAB, 0, 512);
     storage._store = diskImage;
 
@@ -167,15 +167,15 @@ describe('Flow 1: Return visitor resume', () => {
 
     const loader = new EmulatorLoader('templeos');
     loader.bootOrder = 'c';
-    loader.diskImageData = diskData;
 
-    // Verify QEMU args are configured for disk boot
+    // Persistence disabled: no -hda, no -boot in QEMU args
     const args = loader.getQemuArgs();
-    expect(args[args.indexOf('-boot') + 1]).toBe('c');
-    expect(args).toContain('-hda');
-    expect(args).toContain('/pack/disk.img');
+    expect(args).toContain('-cdrom');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
+    expect(args).not.toContain('-hda');
+    expect(args).not.toContain('-boot');
 
-    // Verify module config is buildable (preRun hooks are added during load())
+    // Verify module config is buildable
     const config = loader.buildModuleConfig();
     expect(config.arguments).toBeDefined();
     expect(config.locateFile).toBeDefined();
@@ -206,12 +206,15 @@ describe('Flow 2: Full lifecycle', () => {
     expect(bootMedium).toBe('cd');
     expect(getBootOrderFlag(bootMedium)).toBe('d');
 
-    // First visit: EmulatorLoader creates empty sparse disk
+    // First visit: EmulatorLoader boots from Shrine live CD (no disk)
     const loader = new EmulatorLoader('templeos');
     loader.bootOrder = 'd';
     const args = loader.getQemuArgs();
-    expect(args).toContain('-boot');
-    expect(args[args.indexOf('-boot') + 1]).toBe('d');
+    expect(args).toContain('-cdrom');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
+    // Persistence disabled: no -boot, no -hda
+    expect(args).not.toContain('-boot');
+    expect(args).not.toContain('-hda');
 
     // ── Phase 2: TempleOS installs to disk (QEMU writes) ──
     // Simulate QEMU writing to the disk image
@@ -449,62 +452,53 @@ describe('Flow 3: Crash recovery', () => {
 // ─── Flow 4: TempleOS Installation to Virtual Disk ─────────────────────────
 
 describe('Flow 4: TempleOS installation to virtual disk', () => {
-  it('first visit creates empty disk for QEMU, boots from CD', () => {
+  it('first visit boots from Shrine live CD (no writable disk)', () => {
     const loader = new EmulatorLoader('templeos');
     loader.bootOrder = 'd'; // CD boot for first visit
 
     const args = loader.getQemuArgs();
 
-    // Verify QEMU is configured with both CD and disk
+    // Verify QEMU is configured with CD only (persistence disabled)
     expect(args).toContain('-cdrom');
-    expect(args).toContain('/pack/TempleOSCDV5.03.ISO');
-    expect(args).toContain('-hda');
-    expect(args).toContain('/pack/disk.img');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
+    expect(args).not.toContain('-hda');
+    expect(args).not.toContain('-boot');
 
-    // Boot from CD (first visit)
-    const bootIdx = args.indexOf('-boot');
-    expect(args[bootIdx + 1]).toBe('d');
-
-    // Uses IDE disk controller (required by TempleOS)
+    // No virtio (uses i440FX defaults)
     expect(args.join(' ')).not.toContain('virtio');
 
     // Uses legacy BIOS (not UEFI)
     expect(args).not.toContain('-bios');
   });
 
-  it('first visit: EmulatorLoader defaults to CD boot with disk attached', () => {
+  it('first visit: EmulatorLoader defaults to CD boot without disk', () => {
     const loader = new EmulatorLoader('templeos');
-    // No disk image data = first visit (sparse disk created during load())
-    loader.diskImageData = null;
     loader.bootOrder = 'd';
 
     const args = loader.getQemuArgs();
 
-    // CD boot with writable disk attached
-    expect(args[args.indexOf('-boot') + 1]).toBe('d');
-    expect(args).toContain('-hda');
-    expect(args).toContain('/pack/disk.img');
+    // CD boot without writable disk (persistence disabled)
+    expect(args).not.toContain('-boot');
+    expect(args).not.toContain('-hda');
     expect(args).toContain('-cdrom');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
 
     // Module config is buildable
     const config = loader.buildModuleConfig();
     expect(config.arguments).toBeDefined();
-    // preRun hooks for disk setup are added during load(), not buildModuleConfig()
     expect(Array.isArray(config.preRun)).toBe(true);
   });
 
-  it('resume: EmulatorLoader configured for disk boot with saved data', () => {
-    const savedDisk = new Uint8Array([0x55, 0xAA, 0x00, 0x01]); // MBR signature
+  it('EmulatorLoader always uses CD-only mode (persistence disabled)', () => {
     const loader = new EmulatorLoader('templeos');
-    loader.diskImageData = savedDisk;
-    loader.bootOrder = 'c'; // Disk boot for resume
+    loader.bootOrder = 'c'; // Even if set to 'c', QEMU args have no -boot
 
     const args = loader.getQemuArgs();
-    expect(args[args.indexOf('-boot') + 1]).toBe('c');
-    expect(args).toContain('-hda');
-    expect(args).toContain('/pack/disk.img');
+    expect(args).not.toContain('-boot');
+    expect(args).not.toContain('-hda');
+    expect(args).toContain('-cdrom');
+    expect(args).toContain('/pack/Shrine-v5051.iso');
 
-    // preRun hooks for disk restoration are added during load(), not buildModuleConfig()
     const config = loader.buildModuleConfig();
     expect(Array.isArray(config.preRun)).toBe(true);
   });
@@ -541,7 +535,7 @@ describe('Flow 4: TempleOS installation to virtual disk', () => {
     vi.useRealTimers();
   });
 
-  it('installed system can be resumed after browser restart', async () => {
+  it('storage layer still supports save/load cycle (for future re-enablement)', async () => {
     const storage = createMockStorage();
 
     // Save an "installed" disk image
@@ -554,23 +548,23 @@ describe('Flow 4: TempleOS installation to virtual disk', () => {
     const hasSaved = await storage.hasSavedDisk();
     expect(hasSaved).toBe(true);
 
-    // Load disk and configure for resume
+    // Load disk and verify integrity
     const diskData = await storage.loadDisk();
     expect(diskData).not.toBeNull();
     expect(diskData!.length).toBe(16384);
     expect(diskData![0]).toBe(0x55); // MBR intact
     expect(diskData![512]).toBe(0xBB); // OS files intact
 
-    // Boot from disk
+    // selectBootMedium still works correctly
     const bootMedium = selectBootMedium(true, 'resume');
     expect(bootMedium).toBe('disk');
 
+    // EmulatorLoader always produces CD-only args (persistence disabled)
     const loader = new EmulatorLoader('templeos');
     loader.bootOrder = 'c';
-    loader.diskImageData = diskData;
-
     const args = loader.getQemuArgs();
-    expect(args[args.indexOf('-boot') + 1]).toBe('c');
+    expect(args).not.toContain('-boot');
+    expect(args).toContain('-cdrom');
   });
 });
 
@@ -991,11 +985,14 @@ describe('Boot medium and boot order integration', () => {
       );
       expect(shouldAutoSave).toBe(scenario.expectedAutoSave);
 
-      // Verify QEMU args match
+      // Verify QEMU args — persistence disabled, always CD-only
       const loader = new EmulatorLoader('templeos');
       loader.bootOrder = bootOrder;
       const args = loader.getQemuArgs();
-      expect(args[args.indexOf('-boot') + 1]).toBe(scenario.expectedBootOrder);
+      expect(args).toContain('-cdrom');
+      expect(args).toContain('/pack/Shrine-v5051.iso');
+      expect(args).not.toContain('-boot');
+      expect(args).not.toContain('-hda');
     });
   }
 });

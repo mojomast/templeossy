@@ -166,6 +166,6 @@ Module['FS_createPath']("/", "pack", true, true);
     }
 
     }
-    loadPackage({"files": [{"filename": "/pack/TempleOSCDV5.03.ISO", "start": 0, "end": 17817600}, {"filename": "/pack/bios-256k.bin", "start": 17817600, "end": 18079744}, {"filename": "/pack/kvmvapic.bin", "start": 18079744, "end": 18088960}, {"filename": "/pack/linuxboot_dma.bin", "start": 18088960, "end": 18090496}, {"filename": "/pack/vgabios-stdvga.bin", "start": 18090496, "end": 18129920}], "remote_package_size": 18129920});
+    loadPackage({"files": [{"filename": "/pack/Shrine-v5051.iso", "start": 0, "end": 3844096}, {"filename": "/pack/bios-256k.bin", "start": 3844096, "end": 4106240}, {"filename": "/pack/kvmvapic.bin", "start": 4106240, "end": 4115456}, {"filename": "/pack/linuxboot_dma.bin", "start": 4115456, "end": 4116992}, {"filename": "/pack/vgabios-stdvga.bin", "start": 4116992, "end": 4156416}], "remote_package_size": 4156416});
 
   })();

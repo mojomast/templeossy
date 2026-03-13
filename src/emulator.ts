@@ -1,13 +1,31 @@
-import { openpty } from 'xterm-pty';
-
 /**
  * emulator.ts — Emscripten QEMU module loader with initialization phase tracking
  * and comprehensive error handling.
  *
  * Supports two boot modes:
- * - 'templeos': Boot from TempleOS ISO CD-ROM (default)
+ * - 'templeos': Boot from Shrine ISO CD-ROM (live CD, no persistence)
  * - 'linux-poc': Boot a minimal Linux kernel + initramfs for display pipeline verification
  */
+
+/**
+ * Create a no-op PTY stub that satisfies the QEMU Wasm runtime's expectation
+ * of a PTY slave object without pulling in xterm-pty.  This avoids the CR/CRLF
+ * mismatch that occurs when a real Unix PTY is paired with TempleOS/Shrine
+ * (which uses DOS-style line endings).  Because we render via VGA, the PTY is
+ * never actually used for I/O — QEMU just checks that the object exists.
+ */
+function createPtySlave(): Record<string, unknown> {
+  return {
+    readable: false,
+    writable: false,
+    onReadable: () => { /* no-op */ },
+    onSignal: () => { /* no-op */ },
+    read: () => '',
+    write: () => { /* no-op */ },
+    kill: () => { /* no-op */ },
+    resize: () => { /* no-op */ },
+  };
+}
 
 /** Boot mode for the emulator. */
 export type BootMode = 'templeos' | 'linux-poc';
@@ -169,7 +187,6 @@ export class EmulatorLoader {
   private _module: any = null;
   private _bootMode: BootMode;
   private _bootOrder: BootOrder = 'd';
-  private _diskImageData: Uint8Array | null = null;
 
   constructor(bootMode: BootMode = 'templeos') {
     this._bootMode = bootMode;
@@ -194,15 +211,6 @@ export class EmulatorLoader {
 
   set bootOrder(order: BootOrder) {
     this._bootOrder = order;
-  }
-
-  /**
-   * Set disk image data to inject into the Emscripten FS before QEMU starts.
-   * If set, this data will be written to /pack/disk.img instead of creating
-   * an empty sparse file. Used for resume from saved disk.
-   */
-  set diskImageData(data: Uint8Array | null) {
-    this._diskImageData = data;
   }
 
   /** The loaded Emscripten Module object (available after 'ready' phase). */
@@ -247,18 +255,15 @@ export class EmulatorLoader {
       ];
     }
 
-    // Default: TempleOS boot
+    // Default: Shrine (TempleOS-compatible) live CD boot
     // Uses machine flags validated in native-qemu-validation:
     // - IDE disk controller (default pc/i440FX), legacy BIOS (not UEFI)
     // - 640x480 VGA (-vga std)
-    // - Writable disk for persistence (-hda), raw format, sparse
-    // - Boot order: 'd' = CD-ROM (first visit / fresh), 'c' = disk (resume)
+    // - CD-ROM only, no writable disk (persistence disabled)
     return [
       '-m', '512M',
       '-smp', '1',
-      '-cdrom', '/pack/TempleOSCDV5.03.ISO',
-      '-hda', '/pack/disk.img',
-      '-boot', this._bootOrder,
+      '-cdrom', '/pack/Shrine-v5051.iso',
       '-vga', 'std',
       '-display', 'none',
       '-rtc', 'base=localtime',
@@ -273,8 +278,6 @@ export class EmulatorLoader {
    * Build the Emscripten Module configuration object.
    */
   buildModuleConfig(): Record<string, unknown> {
-    const { slave } = openpty();
-
     const config: Record<string, unknown> = {
       // QEMU arguments
       arguments: this.getQemuArgs(),
@@ -300,9 +303,11 @@ export class EmulatorLoader {
       printErr: (text: string) => {
         console.warn('[QEMU]', text);
       },
-      // QEMU's Emscripten build expects a PTY object from xterm-pty even when
-      // we render VGA output instead of showing a terminal UI.
-      pty: slave,
+      // QEMU's Emscripten build expects a PTY object even when we render VGA
+      // output instead of showing a terminal UI.  We supply a lightweight stub
+      // instead of a real xterm-pty slave to avoid the CR/CRLF mismatch that
+      // breaks HolyC parsing in TempleOS/Shrine.
+      pty: createPtySlave(),
     };
 
     // Initialize preRun array for filesystem setup
@@ -373,9 +378,8 @@ export class EmulatorLoader {
           },
         ];
       } else if (this._bootMode === 'templeos') {
-        // For TempleOS: create or restore writable disk image (raw format)
-        // TempleOS uses IDE disk (default controller), so -hda works.
-        const diskData = this._diskImageData;
+        // Shrine live CD: no writable disk needed (persistence disabled).
+        // The /pack directory and ISO are provided by the data packager (load.js).
         moduleConfig.preRun = [
           ...existingPreRun,
           function () {
@@ -383,24 +387,7 @@ export class EmulatorLoader {
             const FS = (globalThis as any).Module.FS;
             if (FS) {
               try { FS.mkdir('/pack'); } catch { /* already exists */ }
-
-              if (diskData && diskData.length > 0) {
-                // Resume: restore saved disk image from browser storage
-                FS.writeFile('/pack/disk.img', diskData);
-                console.log(`[TempleOS] Restored disk image from storage (${diskData.length} bytes)`);
-              } else {
-                // First visit or fresh: create a smaller writable disk image so
-                // MEMFS does not attempt a multi-gigabyte allocation up front.
-                try {
-                  FS.writeFile('/pack/disk.img', new Uint8Array(0));
-                  FS.truncate('/pack/disk.img', TEMPLEOS_INITIAL_DISK_SIZE_BYTES);
-                  console.log('[TempleOS] Created 128MB writable disk at /pack/disk.img');
-                } catch (err) {
-                  const message = err instanceof Error ? err.message : String(err);
-                  console.error(`[TempleOS] Failed to initialize writable disk: ${message}`);
-                  throw new RangeError(`Failed to initialize writable disk image: ${message}`);
-                }
-              }
+              console.log('[Shrine] Live CD boot — no writable disk');
             }
           },
         ];

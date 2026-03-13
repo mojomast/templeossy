@@ -1,7 +1,10 @@
 /**
  * main.ts — Entry point for TempleOS Browser.
  * Wires together the emulator loader, loading UI, display renderer,
- * controls manager, debug panel, input handlers, and disk persistence.
+ * controls manager, debug panel, and input handlers.
+ *
+ * Persistence is currently disabled (PERSISTENCE_ENABLED = false).
+ * Shrine boots as a live CD with no writable disk.
  */
 
 import { EmulatorLoader, checkSharedArrayBuffer, type BootMode } from './emulator';
@@ -10,14 +13,22 @@ import { DisplayRenderer } from './display';
 import { KeyboardHandler } from './input';
 import { MouseHandler } from './mouse';
 import { ControlsManager, DebugLogger, type ControlElements } from './controls';
+// Persistence imports kept for future re-enablement
 import {
-  DiskStorage,
-  AutoSaveManager,
-  selectBootMedium,
-  getBootOrderFlag,
-  type BootMedium,
+  DiskStorage as _DiskStorage,
+  AutoSaveManager as _AutoSaveManager,
+  selectBootMedium as _selectBootMedium,
+  getBootOrderFlag as _getBootOrderFlag,
+  type BootMedium as _BootMedium,
 } from './storage';
-import { TabLockManager } from './tab-lock';
+import { TabLockManager as _TabLockManager } from './tab-lock';
+
+// Suppress unused-import warnings
+void _DiskStorage; void _AutoSaveManager; void _selectBootMedium;
+void _getBootOrderFlag; void _TabLockManager;
+
+/** Master flag — set to true to re-enable disk persistence and tab locking. */
+const PERSISTENCE_ENABLED = false;
 
 /**
  * Determine boot mode from URL query parameter.
@@ -34,8 +45,9 @@ function getBootMode(): BootMode {
 /**
  * Show the resume choice dialog and wait for user to select an option.
  * Returns 'resume' or 'fresh'.
+ * (Unused while PERSISTENCE_ENABLED is false.)
  */
-function showResumeDialog(): Promise<'resume' | 'fresh'> {
+export function showResumeDialog(): Promise<'resume' | 'fresh'> {
   return new Promise((resolve) => {
     const dialog = document.getElementById('resume-dialog')!;
     const btnResume = document.getElementById('btn-resume') as HTMLButtonElement;
@@ -76,8 +88,9 @@ function showMultiTabWarning(): void {
 
 /**
  * Show a storage notification toast.
+ * (Unused while PERSISTENCE_ENABLED is false.)
  */
-function showStorageToast(message: string): void {
+export function showStorageToast(message: string): void {
   const toast = document.getElementById('storage-toast');
   const toastMessage = document.getElementById('storage-toast-message');
   const toastClose = document.getElementById('storage-toast-close');
@@ -107,19 +120,19 @@ function showStorageToast(message: string): void {
 async function init(): Promise<void> {
   const bootMode = getBootMode();
 
-  // ─── Multi-tab safety: acquire tab lock ──────────────────────────────
-  const tabLock = new TabLockManager();
-  const lockResult = await tabLock.acquire();
+  // ─── Multi-tab safety: acquire tab lock (disabled without persistence) ─
+  let tabLockUnavailable = false;
+  if (PERSISTENCE_ENABLED) {
+    const tabLock = new _TabLockManager();
+    const lockResult = await tabLock.acquire();
 
-  if (!lockResult.acquired && lockResult.reason === 'held-by-other-tab') {
-    showMultiTabWarning();
-    // Don't proceed with emulator initialization — block the tab
-    return;
+    if (!lockResult.acquired && lockResult.reason === 'held-by-other-tab') {
+      showMultiTabWarning();
+      return;
+    }
+
+    tabLockUnavailable = !lockResult.acquired && lockResult.reason === 'api-unavailable';
   }
-
-  // If Web Locks API is unavailable, proceed with a warning in the debug log
-  // (logged later once debug logger is set up)
-  const tabLockUnavailable = !lockResult.acquired && lockResult.reason === 'api-unavailable';
 
   // Gather loading UI elements
   const loadingElements: LoadingElements = {
@@ -161,66 +174,19 @@ async function init(): Promise<void> {
   let keyboardHandler: KeyboardHandler | null = null;
   let mouseHandler: MouseHandler | null = null;
   let loader: EmulatorLoader | null = null;
-  let autoSaveManager: AutoSaveManager | null = null;
 
   // Log tab lock status
-  if (tabLockUnavailable) {
-    debugLog.log('Web Locks API unavailable — multi-tab protection disabled', 'warn');
-  } else {
-    debugLog.log('Tab lock acquired ✓');
-  }
-
-  // Initialize disk storage
-  const diskStorage = new DiskStorage();
-  debugLog.log(`Storage backend: ${diskStorage.backend}`);
-
-  // Request persistent storage to reduce eviction risk
-  diskStorage.requestPersistence().then((granted) => {
-    debugLog.log(`Persistent storage: ${granted ? 'granted' : 'not granted'}`);
-  }).catch(() => {
-    debugLog.log('Persistent storage request failed', 'warn');
-  });
-
-  // ─── Persistence: check for saved disk and determine boot medium ─────
-
-  let bootMedium: BootMedium = 'cd';
-  let savedDiskData: Uint8Array | null = null;
-  let hasSavedDisk = false;
-
-  if (bootMode === 'templeos') {
-    try {
-      const hasSaved = await diskStorage.hasSavedDisk();
-      hasSavedDisk = hasSaved;
-      debugLog.log(`Saved disk found: ${hasSaved}`);
-
-      if (hasSaved) {
-        // Show resume choice dialog
-        const userChoice = await showResumeDialog();
-        debugLog.log(`User chose: ${userChoice}`);
-
-        bootMedium = selectBootMedium(true, userChoice);
-
-        if (userChoice === 'resume') {
-          // Load the saved disk data for injection into Emscripten FS
-          debugLog.log('Loading saved disk image...');
-          savedDiskData = await diskStorage.loadDisk();
-          if (savedDiskData) {
-            debugLog.log(`Disk image loaded: ${savedDiskData.length} bytes`);
-          } else {
-            debugLog.log('Failed to load disk image, falling back to fresh boot', 'warn');
-            bootMedium = 'cd';
-          }
-        }
-      } else {
-        bootMedium = selectBootMedium(false, null);
-      }
-    } catch (err) {
-      debugLog.log(`Storage check failed: ${err}`, 'warn');
-      bootMedium = 'cd';
+  if (PERSISTENCE_ENABLED) {
+    if (tabLockUnavailable) {
+      debugLog.log('Web Locks API unavailable — multi-tab protection disabled', 'warn');
+    } else {
+      debugLog.log('Tab lock acquired ✓');
     }
+  } else {
+    debugLog.log('Persistence disabled — running as live CD');
   }
 
-  debugLog.log(`Boot medium: ${bootMedium} (${bootMedium === 'cd' ? 'CD-ROM' : 'hard disk'})`);
+  debugLog.log('Boot medium: cd (CD-ROM)');
 
   // Capture Emscripten stdout/stderr to debug log
   const originalConsoleLog = console.log;
@@ -263,7 +229,7 @@ async function init(): Promise<void> {
 
     // Re-show loading overlay with booting message to bridge the gap
     // between Start click and first VGA frame (fixes VAL-DISP-006)
-    loadingUI.show('Booting TempleOS...');
+    loadingUI.show('Booting Shrine...');
 
     try {
       displayRenderer = new DisplayRenderer(canvas, loader.module);
@@ -292,39 +258,6 @@ async function init(): Promise<void> {
       mouseHandler = new MouseHandler(canvas, displayContainer, loader.module);
       mouseHandler.attach();
       debugLog.log('Mouse input handler attached');
-
-      // Start auto-save for disk persistence (TempleOS mode only)
-      // CD-only session safety: when booting from CD with an existing saved disk
-      // (user chose "Start fresh"), do NOT auto-save. This prevents overwriting
-      // the installed disk with an empty/CD-only session disk.
-      // Auto-save only runs when:
-      // - Booting from disk (resume) — user explicitly resumed, save their changes
-      // - First visit (no saved disk) — save the new disk after install
-      const shouldAutoSave = bootMode === 'templeos' && (
-        bootMedium === 'disk' ||                    // Resume: save changes
-        (bootMedium === 'cd' && !hasSavedDisk)      // First visit only: save new disk after install
-      );
-
-      if (shouldAutoSave && loader) {
-        const currentLoader = loader;
-        autoSaveManager = new AutoSaveManager(
-          diskStorage,
-          () => currentLoader.readDiskImage(),
-        );
-        autoSaveManager.onStorageError = (error) => {
-          debugLog.log(`Storage error (${error.type}): ${error.message}`, 'error');
-          showStorageToast(error.type === 'quota'
-            ? 'Storage full — cannot save disk image. Your changes may be lost.'
-            : error.message);
-        };
-        autoSaveManager.onFlush = (message) => {
-          debugLog.log(`[auto-save] ${message}`);
-        };
-        autoSaveManager.start();
-        debugLog.log('Auto-save started (every 30 seconds + on tab close)');
-      } else if (bootMode === 'templeos' && bootMedium === 'cd' && hasSavedDisk) {
-        debugLog.log('CD-only session: auto-save disabled to protect existing disk image');
-      }
 
       // Focus the container for keyboard input
       displayContainer.focus();
@@ -358,39 +291,12 @@ async function init(): Promise<void> {
   }
 
   /**
-   * Wipe & Reset: clear disk storage, recreate empty disk, restart fresh.
-   * After wipe, next visit is like first visit (no resume choice).
-   *
-   * Properly awaits auto-save stop before deleting disk to prevent
-   * a race condition where the final flush could re-write the disk
-   * after deletion.
+   * Wipe & Reset: reload the page for a fresh start.
+   * With persistence disabled this simply reloads.
    */
   function wipeAndReset(): void {
-    debugLog.log('Wipe & Reset — clearing storage and restarting...');
-
-    // Stop auto-save first to prevent race with delete.
-    // We must await the stop (which includes a final flush) before deleting,
-    // otherwise the final flush could re-write the disk image after we delete it.
-    const stopPromise = autoSaveManager
-      ? autoSaveManager.stop()
-      : Promise.resolve();
-    autoSaveManager = null;
-
-    stopPromise
-      .then(() => diskStorage.deleteDisk())
-      .then(() => {
-        debugLog.log('Disk image deleted from storage');
-        // Release tab lock before reload so the new tab can acquire it
-        tabLock.release();
-        // Reload page for a fresh start (boots from CD, no resume choice)
-        window.location.reload();
-      })
-      .catch((err) => {
-        debugLog.log(`Failed to wipe storage: ${err}`, 'error');
-        tabLock.release();
-        // Reload anyway
-        window.location.reload();
-      });
+    debugLog.log('Wipe & Reset — restarting...');
+    window.location.reload();
   }
 
   // Create controls manager with callbacks
@@ -415,15 +321,10 @@ async function init(): Promise<void> {
   debugLog.log(`Boot mode: ${bootMode}`);
   loader = new EmulatorLoader(bootMode);
 
-  // Set boot order and disk data based on persistence decisions
+  // Always boot from CD (Shrine live CD, persistence disabled)
   if (bootMode === 'templeos') {
-    loader.bootOrder = getBootOrderFlag(bootMedium);
-    debugLog.log(`Boot order: ${loader.bootOrder} (${bootMedium === 'cd' ? 'CD-ROM first' : 'disk first'})`);
-
-    if (savedDiskData) {
-      loader.diskImageData = savedDiskData;
-      debugLog.log('Saved disk image will be injected on boot');
-    }
+    loader.bootOrder = 'd';
+    debugLog.log('Boot order: d (CD-ROM)');
   }
 
   // Wire phase changes to loading UI and controls
@@ -466,8 +367,6 @@ async function init(): Promise<void> {
       displayRenderer.stop();
     }
     controls.destroy();
-    tabLock.release();
-    // Note: AutoSaveManager has its own beforeunload handler for disk flush
   });
 }
 
