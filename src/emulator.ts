@@ -221,16 +221,22 @@ export class EmulatorLoader {
     }
 
     // Default: TempleOS boot
+    // Uses machine flags validated in native-qemu-validation:
+    // - IDE disk controller (default pc/i440FX), legacy BIOS (not UEFI)
+    // - 640x480 VGA (-vga std)
+    // - Writable disk for persistence (-hda), raw format, sparse
     return [
       '-m', '512M',
       '-smp', '1',
       '-cdrom', '/pack/TempleOSCDV5.03.ISO',
+      '-hda', '/pack/disk.img',
       '-boot', 'd',
       '-vga', 'std',
       '-display', 'emscripten',
       '-rtc', 'base=localtime',
       '-accel', 'tcg,tb-size=500',
       '-nic', 'none',
+      '-no-reboot',
       '-L', '/pack',
     ];
   }
@@ -266,13 +272,8 @@ export class EmulatorLoader {
       },
     };
 
-    // For Linux PoC: inject kernel + initramfs into Emscripten FS via preRun
-    if (this._bootMode === 'linux-poc') {
-      config.preRun = [
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...(config.preRun as Array<() => void> || []),
-      ];
-    }
+    // Initialize preRun array for filesystem setup
+    config.preRun = [];
 
     return config;
   }
@@ -319,9 +320,11 @@ export class EmulatorLoader {
       // The load.js script expects a global Module object
       const moduleConfig = this.buildModuleConfig();
 
-      // For Linux PoC: add a preRun callback to inject kernel+initramfs into the FS
+      // Set up preRun callbacks for filesystem setup
+      const existingPreRun = (moduleConfig.preRun as Array<() => void>) || [];
+
       if (this._bootMode === 'linux-poc' && linuxKernel && linuxInitramfs) {
-        const existingPreRun = (moduleConfig.preRun as Array<() => void>) || [];
+        // For Linux PoC: inject kernel+initramfs into the FS
         moduleConfig.preRun = [
           ...existingPreRun,
           function () {
@@ -333,6 +336,30 @@ export class EmulatorLoader {
               FS.writeFile('/pack/vmlinuz', linuxKernel);
               FS.writeFile('/pack/initramfs.gz', linuxInitramfs);
               console.log('[Linux PoC] Injected kernel and initramfs into /pack/');
+            }
+          },
+        ];
+      } else if (this._bootMode === 'templeos') {
+        // For TempleOS: create a small writable disk image (raw format, sparse)
+        // 2GB sparse disk — only allocated bytes consume memory.
+        // TempleOS uses IDE disk (default controller), so -hda works.
+        moduleConfig.preRun = [
+          ...existingPreRun,
+          function () {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const FS = (globalThis as any).Module.FS;
+            if (FS) {
+              try { FS.mkdir('/pack'); } catch { /* already exists */ }
+              // Create a small sparse raw disk image (2GB virtual, 0 bytes actual).
+              // We write a minimal header-less raw image — just empty bytes.
+              // QEMU will treat it as a raw disk and grow it as needed.
+              const DISK_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+              // Emscripten FS supports sparse files via the memfs backend.
+              // We truncate to the desired size to set the file length without
+              // actually allocating 2GB of memory.
+              FS.writeFile('/pack/disk.img', new Uint8Array(0));
+              FS.truncate('/pack/disk.img', DISK_SIZE);
+              console.log('[TempleOS] Created 2GB sparse writable disk at /pack/disk.img');
             }
           },
         ];

@@ -29,15 +29,15 @@ function escapeHtml(text: string): string {
 
 /**
  * Determine boot mode from URL query parameter.
- * Default is 'linux-poc' for the current milestone.
- * Use ?boot=templeos to boot TempleOS instead.
+ * Default is 'templeos'.
+ * Use ?boot=linux-poc to boot the Linux proof-of-concept instead.
  */
 function getBootMode(): BootMode {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get('boot');
-  if (mode === 'templeos') return 'templeos';
-  // Default to linux-poc for the display verification milestone
-  return 'linux-poc';
+  if (mode === 'linux-poc') return 'linux-poc';
+  // Default to TempleOS
+  return 'templeos';
 }
 
 /** Initialize the application. */

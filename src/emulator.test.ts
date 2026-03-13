@@ -118,11 +118,11 @@ describe('EmulatorLoader', () => {
     expect(loader.error).toBeNull();
   });
 
-  it('buildModuleConfig returns valid configuration', () => {
+  it('buildModuleConfig returns valid configuration (TempleOS default)', () => {
     const loader = new EmulatorLoader();
     const config = loader.buildModuleConfig();
 
-    // Check QEMU arguments
+    // Check QEMU arguments — default is TempleOS
     const args = config.arguments as string[];
     expect(args).toContain('-m');
     expect(args).toContain('512M');
@@ -132,10 +132,13 @@ describe('EmulatorLoader', () => {
     expect(args).toContain('emscripten');
     expect(args).toContain('-cdrom');
     expect(args).toContain('/pack/TempleOSCDV5.03.ISO');
+    expect(args).toContain('-hda');
+    expect(args).toContain('/pack/disk.img');
     expect(args).toContain('-L');
     expect(args).toContain('/pack');
     expect(args).toContain('-nic');
     expect(args).toContain('none');
+    expect(args).toContain('-no-reboot');
   });
 
   it('buildModuleConfig has locateFile pointing to /emulator/', () => {
@@ -231,11 +234,69 @@ describe('EmulatorLoader', () => {
     expect(args).not.toContain('-initrd');
   });
 
+  it('templeos mode includes writable disk image (-hda)', () => {
+    const loader = new EmulatorLoader('templeos');
+    const args = loader.getQemuArgs();
+    expect(args).toContain('-hda');
+    expect(args).toContain('/pack/disk.img');
+  });
+
+  it('templeos mode includes -no-reboot for safety', () => {
+    const loader = new EmulatorLoader('templeos');
+    const args = loader.getQemuArgs();
+    expect(args).toContain('-no-reboot');
+  });
+
+  it('templeos mode uses IDE disk controller (no virtio)', () => {
+    const loader = new EmulatorLoader('templeos');
+    const args = loader.getQemuArgs();
+    // -hda implies IDE disk (default pc/i440FX machine)
+    expect(args).toContain('-hda');
+    // Should not contain virtio-related args
+    const joined = args.join(' ');
+    expect(joined).not.toContain('virtio');
+  });
+
   it('linux-poc uses 256M memory (smaller than templeos)', () => {
     const loader = new EmulatorLoader('linux-poc');
     const args = loader.getQemuArgs();
     const memIdx = args.indexOf('-m');
     expect(memIdx).toBeGreaterThanOrEqual(0);
     expect(args[memIdx + 1]).toBe('256M');
+  });
+
+  it('linux-poc mode does not include disk image or -no-reboot', () => {
+    const loader = new EmulatorLoader('linux-poc');
+    const args = loader.getQemuArgs();
+    expect(args).not.toContain('-hda');
+    expect(args).not.toContain('-no-reboot');
+  });
+
+  it('templeos mode uses 512M memory', () => {
+    const loader = new EmulatorLoader('templeos');
+    const args = loader.getQemuArgs();
+    const memIdx = args.indexOf('-m');
+    expect(memIdx).toBeGreaterThanOrEqual(0);
+    expect(args[memIdx + 1]).toBe('512M');
+  });
+
+  it('both modes use -vga std and -display emscripten', () => {
+    for (const mode of ['templeos', 'linux-poc'] as const) {
+      const loader = new EmulatorLoader(mode);
+      const args = loader.getQemuArgs();
+      expect(args).toContain('-vga');
+      expect(args).toContain('std');
+      expect(args).toContain('-display');
+      expect(args).toContain('emscripten');
+    }
+  });
+
+  it('both modes disable networking (-nic none)', () => {
+    for (const mode of ['templeos', 'linux-poc'] as const) {
+      const loader = new EmulatorLoader(mode);
+      const args = loader.getQemuArgs();
+      expect(args).toContain('-nic');
+      expect(args).toContain('none');
+    }
   });
 });
