@@ -292,6 +292,56 @@ body {
   color: #fcd34d;
 }
 
+/* Resume choice dialog */
+.resume-dialog {
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem 0;
+}
+
+.resume-dialog.hidden {
+  display: none;
+}
+
+.resume-dialog-content {
+  background: #1f2937;
+  border: 1px solid #374151;
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  max-width: 500px;
+  width: 100%;
+  text-align: center;
+}
+
+.resume-dialog-title {
+  font-size: 1.1rem;
+  color: #ffffff;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+}
+
+.resume-dialog-text {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  margin-bottom: 1rem;
+  line-height: 1.4;
+}
+
+.resume-dialog-buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.btn-resume {
+  min-width: 180px;
+}
+
+.btn-fresh {
+  min-width: 180px;
+}
+
 /* Exit Fullscreen button */
 .btn-exit-fullscreen {
   position: absolute;

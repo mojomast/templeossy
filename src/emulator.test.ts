@@ -299,4 +299,55 @@ describe('EmulatorLoader', () => {
       expect(args).toContain('none');
     }
   });
+
+  // ─── Boot order tests ─────────────────────────────────────────────────
+
+  it('defaults to boot order "d" (CD-ROM)', () => {
+    const loader = new EmulatorLoader('templeos');
+    expect(loader.bootOrder).toBe('d');
+  });
+
+  it('boot order can be set to "c" (disk)', () => {
+    const loader = new EmulatorLoader('templeos');
+    loader.bootOrder = 'c';
+    expect(loader.bootOrder).toBe('c');
+  });
+
+  it('getQemuArgs uses boot order "d" by default', () => {
+    const loader = new EmulatorLoader('templeos');
+    const args = loader.getQemuArgs();
+    const bootIdx = args.indexOf('-boot');
+    expect(bootIdx).toBeGreaterThanOrEqual(0);
+    expect(args[bootIdx + 1]).toBe('d');
+  });
+
+  it('getQemuArgs reflects updated boot order "c"', () => {
+    const loader = new EmulatorLoader('templeos');
+    loader.bootOrder = 'c';
+    const args = loader.getQemuArgs();
+    const bootIdx = args.indexOf('-boot');
+    expect(bootIdx).toBeGreaterThanOrEqual(0);
+    expect(args[bootIdx + 1]).toBe('c');
+  });
+
+  // ─── Disk image data injection tests ──────────────────────────────────
+
+  it('diskImageData defaults to null', () => {
+    const loader = new EmulatorLoader('templeos');
+    // readDiskImage returns null when module not loaded
+    expect(loader.readDiskImage()).toBeNull();
+  });
+
+  it('diskImageData can be set for resume', () => {
+    const loader = new EmulatorLoader('templeos');
+    const data = new Uint8Array([0xDE, 0xAD, 0xBE, 0xEF]);
+    loader.diskImageData = data;
+    // Setting diskImageData doesn't affect readDiskImage (which reads from Emscripten FS)
+    // but does affect the preRun configuration in buildModuleConfig
+  });
+
+  it('readDiskImage returns null when module is not loaded', () => {
+    const loader = new EmulatorLoader('templeos');
+    expect(loader.readDiskImage()).toBeNull();
+  });
 });

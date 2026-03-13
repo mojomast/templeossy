@@ -1,7 +1,7 @@
 /**
  * main.ts — Entry point for TempleOS Browser.
  * Wires together the emulator loader, loading UI, display renderer,
- * controls manager, debug panel, and input handlers.
+ * controls manager, debug panel, input handlers, and disk persistence.
  */
 
 import { EmulatorLoader, checkSharedArrayBuffer, type BootMode } from './emulator';
@@ -10,6 +10,13 @@ import { DisplayRenderer } from './display';
 import { KeyboardHandler } from './input';
 import { MouseHandler } from './mouse';
 import { ControlsManager, DebugLogger, type ControlElements } from './controls';
+import {
+  DiskStorage,
+  AutoSaveManager,
+  selectBootMedium,
+  getBootOrderFlag,
+  type BootMedium,
+} from './storage';
 
 /**
  * Determine boot mode from URL query parameter.
@@ -23,8 +30,41 @@ function getBootMode(): BootMode {
   return 'templeos';
 }
 
+/**
+ * Show the resume choice dialog and wait for user to select an option.
+ * Returns 'resume' or 'fresh'.
+ */
+function showResumeDialog(): Promise<'resume' | 'fresh'> {
+  return new Promise((resolve) => {
+    const dialog = document.getElementById('resume-dialog')!;
+    const btnResume = document.getElementById('btn-resume') as HTMLButtonElement;
+    const btnFresh = document.getElementById('btn-fresh') as HTMLButtonElement;
+
+    dialog.classList.remove('hidden');
+
+    const cleanup = (): void => {
+      dialog.classList.add('hidden');
+      btnResume.removeEventListener('click', onResume);
+      btnFresh.removeEventListener('click', onFresh);
+    };
+
+    const onResume = (): void => {
+      cleanup();
+      resolve('resume');
+    };
+
+    const onFresh = (): void => {
+      cleanup();
+      resolve('fresh');
+    };
+
+    btnResume.addEventListener('click', onResume);
+    btnFresh.addEventListener('click', onFresh);
+  });
+}
+
 /** Initialize the application. */
-function init(): void {
+async function init(): Promise<void> {
   const bootMode = getBootMode();
 
   // Gather loading UI elements
@@ -67,6 +107,57 @@ function init(): void {
   let keyboardHandler: KeyboardHandler | null = null;
   let mouseHandler: MouseHandler | null = null;
   let loader: EmulatorLoader | null = null;
+  let autoSaveManager: AutoSaveManager | null = null;
+
+  // Initialize disk storage
+  const diskStorage = new DiskStorage();
+  debugLog.log(`Storage backend: ${diskStorage.backend}`);
+
+  // Request persistent storage to reduce eviction risk
+  diskStorage.requestPersistence().then((granted) => {
+    debugLog.log(`Persistent storage: ${granted ? 'granted' : 'not granted'}`);
+  }).catch(() => {
+    debugLog.log('Persistent storage request failed', 'warn');
+  });
+
+  // ─── Persistence: check for saved disk and determine boot medium ─────
+
+  let bootMedium: BootMedium = 'cd';
+  let savedDiskData: Uint8Array | null = null;
+
+  if (bootMode === 'templeos') {
+    try {
+      const hasSaved = await diskStorage.hasSavedDisk();
+      debugLog.log(`Saved disk found: ${hasSaved}`);
+
+      if (hasSaved) {
+        // Show resume choice dialog
+        const userChoice = await showResumeDialog();
+        debugLog.log(`User chose: ${userChoice}`);
+
+        bootMedium = selectBootMedium(true, userChoice);
+
+        if (userChoice === 'resume') {
+          // Load the saved disk data for injection into Emscripten FS
+          debugLog.log('Loading saved disk image...');
+          savedDiskData = await diskStorage.loadDisk();
+          if (savedDiskData) {
+            debugLog.log(`Disk image loaded: ${savedDiskData.length} bytes`);
+          } else {
+            debugLog.log('Failed to load disk image, falling back to fresh boot', 'warn');
+            bootMedium = 'cd';
+          }
+        }
+      } else {
+        bootMedium = selectBootMedium(false, null);
+      }
+    } catch (err) {
+      debugLog.log(`Storage check failed: ${err}`, 'warn');
+      bootMedium = 'cd';
+    }
+  }
+
+  debugLog.log(`Boot medium: ${bootMedium} (${bootMedium === 'cd' ? 'CD-ROM' : 'hard disk'})`);
 
   // Capture Emscripten stdout/stderr to debug log
   const originalConsoleLog = console.log;
@@ -133,6 +224,17 @@ function init(): void {
       mouseHandler.attach();
       debugLog.log('Mouse input handler attached');
 
+      // Start auto-save for disk persistence (TempleOS mode only)
+      if (bootMode === 'templeos' && loader) {
+        const currentLoader = loader;
+        autoSaveManager = new AutoSaveManager(
+          diskStorage,
+          () => currentLoader.readDiskImage(),
+        );
+        autoSaveManager.start();
+        debugLog.log('Auto-save started (every 30 seconds + on tab close)');
+      }
+
       // Focus the container for keyboard input
       displayContainer.focus();
     } catch (err: unknown) {
@@ -165,10 +267,26 @@ function init(): void {
   }
 
   /**
-   * Wipe & Reset: placeholder for persistence feature.
+   * Wipe & Reset: clear disk storage and restart fresh.
    */
   function wipeAndReset(): void {
-    debugLog.log('Wipe & Reset — will be implemented in persistence feature');
+    debugLog.log('Wipe & Reset — clearing storage and restarting...');
+
+    // Stop auto-save first
+    if (autoSaveManager) {
+      void autoSaveManager.stop();
+      autoSaveManager = null;
+    }
+
+    diskStorage.deleteDisk().then(() => {
+      debugLog.log('Disk image deleted from storage');
+      // Reload page for a fresh start
+      window.location.reload();
+    }).catch((err) => {
+      debugLog.log(`Failed to delete disk: ${err}`, 'error');
+      // Reload anyway
+      window.location.reload();
+    });
   }
 
   // Create controls manager with callbacks
@@ -192,6 +310,17 @@ function init(): void {
   // Create emulator loader with the selected boot mode
   debugLog.log(`Boot mode: ${bootMode}`);
   loader = new EmulatorLoader(bootMode);
+
+  // Set boot order and disk data based on persistence decisions
+  if (bootMode === 'templeos') {
+    loader.bootOrder = getBootOrderFlag(bootMedium);
+    debugLog.log(`Boot order: ${loader.bootOrder} (${bootMedium === 'cd' ? 'CD-ROM first' : 'disk first'})`);
+
+    if (savedDiskData) {
+      loader.diskImageData = savedDiskData;
+      debugLog.log('Saved disk image will be injected on boot');
+    }
+  }
 
   // Wire phase changes to loading UI and controls
   loader.onPhaseChange = (phase, error) => {
@@ -233,12 +362,13 @@ function init(): void {
       displayRenderer.stop();
     }
     controls.destroy();
+    // Note: AutoSaveManager has its own beforeunload handler for disk flush
   });
 }
 
 // Initialize when DOM is ready
 if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+  document.addEventListener('DOMContentLoaded', () => { void init(); });
 } else {
-  init();
+  void init();
 }

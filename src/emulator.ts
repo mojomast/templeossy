@@ -10,6 +10,9 @@
 /** Boot mode for the emulator. */
 export type BootMode = 'templeos' | 'linux-poc';
 
+/** Boot order: 'c' = hard disk first, 'd' = CD-ROM first. */
+export type BootOrder = 'c' | 'd';
+
 // Initialization phases
 export type EmulatorPhase =
   | 'idle'
@@ -161,6 +164,8 @@ export class EmulatorLoader {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _module: any = null;
   private _bootMode: BootMode;
+  private _bootOrder: BootOrder = 'd';
+  private _diskImageData: Uint8Array | null = null;
 
   constructor(bootMode: BootMode = 'templeos') {
     this._bootMode = bootMode;
@@ -176,6 +181,24 @@ export class EmulatorLoader {
 
   get bootMode(): BootMode {
     return this._bootMode;
+  }
+
+  /** Boot order: 'c' = disk, 'd' = CD-ROM (default). */
+  get bootOrder(): BootOrder {
+    return this._bootOrder;
+  }
+
+  set bootOrder(order: BootOrder) {
+    this._bootOrder = order;
+  }
+
+  /**
+   * Set disk image data to inject into the Emscripten FS before QEMU starts.
+   * If set, this data will be written to /pack/disk.img instead of creating
+   * an empty sparse file. Used for resume from saved disk.
+   */
+  set diskImageData(data: Uint8Array | null) {
+    this._diskImageData = data;
   }
 
   /** The loaded Emscripten Module object (available after 'ready' phase). */
@@ -225,12 +248,13 @@ export class EmulatorLoader {
     // - IDE disk controller (default pc/i440FX), legacy BIOS (not UEFI)
     // - 640x480 VGA (-vga std)
     // - Writable disk for persistence (-hda), raw format, sparse
+    // - Boot order: 'd' = CD-ROM (first visit / fresh), 'c' = disk (resume)
     return [
       '-m', '512M',
       '-smp', '1',
       '-cdrom', '/pack/TempleOSCDV5.03.ISO',
       '-hda', '/pack/disk.img',
-      '-boot', 'd',
+      '-boot', this._bootOrder,
       '-vga', 'std',
       '-display', 'emscripten',
       '-rtc', 'base=localtime',
@@ -340,9 +364,9 @@ export class EmulatorLoader {
           },
         ];
       } else if (this._bootMode === 'templeos') {
-        // For TempleOS: create a small writable disk image (raw format, sparse)
-        // 2GB sparse disk — only allocated bytes consume memory.
+        // For TempleOS: create or restore writable disk image (raw format)
         // TempleOS uses IDE disk (default controller), so -hda works.
+        const diskData = this._diskImageData;
         moduleConfig.preRun = [
           ...existingPreRun,
           function () {
@@ -350,16 +374,19 @@ export class EmulatorLoader {
             const FS = (globalThis as any).Module.FS;
             if (FS) {
               try { FS.mkdir('/pack'); } catch { /* already exists */ }
-              // Create a small sparse raw disk image (2GB virtual, 0 bytes actual).
-              // We write a minimal header-less raw image — just empty bytes.
-              // QEMU will treat it as a raw disk and grow it as needed.
-              const DISK_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
-              // Emscripten FS supports sparse files via the memfs backend.
-              // We truncate to the desired size to set the file length without
-              // actually allocating 2GB of memory.
-              FS.writeFile('/pack/disk.img', new Uint8Array(0));
-              FS.truncate('/pack/disk.img', DISK_SIZE);
-              console.log('[TempleOS] Created 2GB sparse writable disk at /pack/disk.img');
+
+              if (diskData && diskData.length > 0) {
+                // Resume: restore saved disk image from browser storage
+                FS.writeFile('/pack/disk.img', diskData);
+                console.log(`[TempleOS] Restored disk image from storage (${diskData.length} bytes)`);
+              } else {
+                // First visit or fresh: create a 2GB sparse disk image.
+                // Only allocated bytes consume memory.
+                const DISK_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
+                FS.writeFile('/pack/disk.img', new Uint8Array(0));
+                FS.truncate('/pack/disk.img', DISK_SIZE);
+                console.log('[TempleOS] Created 2GB sparse writable disk at /pack/disk.img');
+              }
             }
           },
         ];
@@ -391,6 +418,28 @@ export class EmulatorLoader {
     } catch (err: unknown) {
       const emulatorError = classifyError(err);
       this.setPhase('error', emulatorError);
+    }
+  }
+
+  /**
+   * Read the current disk image data from the Emscripten virtual filesystem.
+   * Returns null if the module is not loaded or the file doesn't exist.
+   *
+   * Used by AutoSaveManager to periodically flush disk data to browser storage.
+   */
+  readDiskImage(): Uint8Array | null {
+    if (!this._module) return null;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const FS = (this._module as any).FS;
+      if (!FS) return null;
+
+      // Read the disk image from the Emscripten FS
+      const data = FS.readFile('/pack/disk.img') as Uint8Array;
+      return data;
+    } catch {
+      return null;
     }
   }
 
