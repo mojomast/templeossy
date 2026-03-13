@@ -1,7 +1,7 @@
 /**
  * main.ts — Entry point for TempleOS Browser.
- * Wires together the emulator loader, loading UI, display renderer, debug panel,
- * and controls.
+ * Wires together the emulator loader, loading UI, display renderer,
+ * controls manager, debug panel, and input handlers.
  */
 
 import { EmulatorLoader, checkSharedArrayBuffer, type BootMode } from './emulator';
@@ -9,25 +9,7 @@ import { LoadingUI, type LoadingElements } from './loading';
 import { DisplayRenderer } from './display';
 import { KeyboardHandler } from './input';
 import { MouseHandler } from './mouse';
-
-/** Append a timestamped entry to the debug log. */
-function debugLog(message: string, level: 'info' | 'warn' | 'error' = 'info'): void {
-  const logEl = document.getElementById('debug-log');
-  if (!logEl) return;
-
-  const entry = document.createElement('div');
-  entry.className = `log-entry ${level}`;
-  const time = new Date().toLocaleTimeString();
-  entry.innerHTML = `<span class="timestamp">[${time}]</span> ${escapeHtml(message)}`;
-  logEl.appendChild(entry);
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
+import { ControlsManager, DebugLogger, type ControlElements } from './controls';
 
 /**
  * Determine boot mode from URL query parameter.
@@ -38,7 +20,6 @@ function getBootMode(): BootMode {
   const params = new URLSearchParams(window.location.search);
   const mode = params.get('boot');
   if (mode === 'linux-poc') return 'linux-poc';
-  // Default to TempleOS
   return 'templeos';
 }
 
@@ -59,21 +40,52 @@ function init(): void {
 
   const loadingUI = new LoadingUI(loadingElements);
 
-  // Gather control buttons
-  const btnStart = document.getElementById('btn-start') as HTMLButtonElement;
-  const btnReboot = document.getElementById('btn-reboot') as HTMLButtonElement;
-  const btnWipe = document.getElementById('btn-wipe') as HTMLButtonElement;
-  const btnFullscreen = document.getElementById('btn-fullscreen') as HTMLButtonElement;
+  // Gather DOM elements
+  const canvas = document.getElementById('display') as HTMLCanvasElement;
+  const displayContainer = document.getElementById('display-container')!;
+  const loadingOverlay = document.getElementById('loading-overlay')!;
+  const debugPanel = document.getElementById('debug-panel')!;
+  const debugLogEl = document.getElementById('debug-log')!;
   const btnDebugToggle = document.getElementById('btn-debug-toggle') as HTMLButtonElement;
   const btnDebugClear = document.getElementById('btn-debug-clear') as HTMLButtonElement;
-  const debugPanel = document.getElementById('debug-panel')!;
-  const canvas = document.getElementById('display') as HTMLCanvasElement;
-  const loadingOverlay = document.getElementById('loading-overlay')!;
+
+  // Gather control button elements
+  const controlElements: ControlElements = {
+    btnStart: document.getElementById('btn-start') as HTMLButtonElement,
+    btnReboot: document.getElementById('btn-reboot') as HTMLButtonElement,
+    btnWipe: document.getElementById('btn-wipe') as HTMLButtonElement,
+    btnFullscreen: document.getElementById('btn-fullscreen') as HTMLButtonElement,
+    btnExitFullscreen: document.getElementById('btn-exit-fullscreen') as HTMLButtonElement,
+    displayContainer,
+    canvas,
+  };
+
+  // Create debug logger
+  const debugLog = new DebugLogger(debugLogEl);
 
   // Track display renderer and input handlers
   let displayRenderer: DisplayRenderer | null = null;
   let keyboardHandler: KeyboardHandler | null = null;
   let mouseHandler: MouseHandler | null = null;
+  let loader: EmulatorLoader | null = null;
+
+  // Capture Emscripten stdout/stderr to debug log
+  const originalConsoleLog = console.log;
+  const originalConsoleWarn = console.warn;
+  console.log = (...args: unknown[]) => {
+    originalConsoleLog(...args);
+    const msg = args.map(String).join(' ');
+    if (msg.startsWith('[QEMU]')) {
+      debugLog.log(msg, 'info');
+    }
+  };
+  console.warn = (...args: unknown[]) => {
+    originalConsoleWarn(...args);
+    const msg = args.map(String).join(' ');
+    if (msg.startsWith('[QEMU]')) {
+      debugLog.log(msg, 'warn');
+    }
+  };
 
   // Debug panel toggle
   btnDebugToggle.addEventListener('click', () => {
@@ -81,38 +93,120 @@ function init(): void {
   });
 
   btnDebugClear.addEventListener('click', () => {
-    const logEl = document.getElementById('debug-log')!;
-    logEl.innerHTML = '';
+    debugLog.clear();
+  });
+
+  /**
+   * Start the emulator: create display renderer and input handlers.
+   */
+  function startEmulator(): void {
+    if (!loader?.module) {
+      debugLog.log('Module not ready yet', 'warn');
+      return;
+    }
+
+    debugLog.log('Starting emulator...');
+    controls.setState('running');
+
+    try {
+      displayRenderer = new DisplayRenderer(canvas, loader.module);
+
+      // When first non-blank frame is detected, hide loading overlay
+      displayRenderer.onFirstFrame = () => {
+        debugLog.log('First VGA frame detected — display active');
+        loadingOverlay.classList.add('fade-out');
+        setTimeout(() => {
+          loadingOverlay.classList.add('hidden');
+        }, 500);
+      };
+
+      displayRenderer.start();
+      debugLog.log('Display render loop started (~30 FPS polling)');
+
+      // Set up keyboard input handler on the display container
+      keyboardHandler = new KeyboardHandler(displayContainer, loader.module);
+      keyboardHandler.attach();
+      debugLog.log('Keyboard input handler attached');
+
+      // Set up mouse input handler on the canvas
+      mouseHandler = new MouseHandler(canvas, displayContainer, loader.module);
+      mouseHandler.attach();
+      debugLog.log('Mouse input handler attached');
+
+      // Focus the container for keyboard input
+      displayContainer.focus();
+    } catch (err: unknown) {
+      debugLog.log(`Failed to start display: ${err}`, 'error');
+      controls.setState('error');
+    }
+  }
+
+  /**
+   * Reboot the emulator: perform a QEMU system reset (hard reboot).
+   * Disk image is preserved.
+   */
+  function rebootEmulator(): void {
+    if (!loader?.module) return;
+
+    debugLog.log('Rebooting emulator...');
+
+    try {
+      // Call QEMU system reset if available
+      if (typeof loader.module._qemu_system_reset === 'function') {
+        loader.module._qemu_system_reset();
+        debugLog.log('QEMU system reset performed — TempleOS will reboot');
+      } else {
+        debugLog.log('QEMU system reset not available — reloading page', 'warn');
+        window.location.reload();
+      }
+    } catch (err: unknown) {
+      debugLog.log(`Reboot failed: ${err}`, 'error');
+    }
+  }
+
+  /**
+   * Wipe & Reset: placeholder for persistence feature.
+   */
+  function wipeAndReset(): void {
+    debugLog.log('Wipe & Reset — will be implemented in persistence feature');
+  }
+
+  // Create controls manager with callbacks
+  const controls = new ControlsManager(controlElements, {
+    onStart: startEmulator,
+    onReboot: rebootEmulator,
+    onWipe: wipeAndReset,
   });
 
   // Check SharedArrayBuffer first
-  debugLog('Checking browser capabilities...');
+  debugLog.log('Checking browser capabilities...');
   const sabError = checkSharedArrayBuffer();
   if (sabError) {
-    debugLog(`SharedArrayBuffer not available: ${sabError.message}`, 'error');
+    debugLog.log(`SharedArrayBuffer not available: ${sabError.message}`, 'error');
     loadingUI.updatePhase('error', sabError);
+    controls.setState('error');
     return;
   }
-  debugLog('SharedArrayBuffer available ✓');
+  debugLog.log('SharedArrayBuffer available ✓');
 
   // Create emulator loader with the selected boot mode
-  debugLog(`Boot mode: ${bootMode}`);
-  const loader = new EmulatorLoader(bootMode);
+  debugLog.log(`Boot mode: ${bootMode}`);
+  loader = new EmulatorLoader(bootMode);
 
-  // Wire phase changes to loading UI
+  // Wire phase changes to loading UI and controls
   loader.onPhaseChange = (phase, error) => {
-    debugLog(`Phase: ${phase}${error ? ` — ${error.message}` : ''}`);
+    debugLog.log(`Phase: ${phase}${error ? ` — ${error.message}` : ''}`);
     loadingUI.updatePhase(phase, error);
 
     if (phase === 'ready') {
-      btnStart.disabled = false;
-      btnFullscreen.disabled = false;
-      debugLog('Emulator ready. Click Start to boot.');
+      controls.setState('ready');
+      debugLog.log('Emulator ready. Click Start to boot.');
     }
 
     if (phase === 'error' && error) {
-      debugLog(`Error (${error.type}): ${error.message}`, 'error');
-      debugLog(`Remediation: ${error.remediation}`, 'warn');
+      controls.setState('error');
+      debugLog.log(`Error (${error.type}): ${error.message}`, 'error');
+      debugLog.log(`Remediation: ${error.remediation}`, 'warn');
     }
   };
 
@@ -122,87 +216,12 @@ function init(): void {
   };
 
   // Start loading the emulator
-  debugLog('Starting emulator initialization...');
+  debugLog.log('Starting emulator initialization...');
   loader.load().catch((err: unknown) => {
-    debugLog(`Unhandled error during load: ${err}`, 'error');
+    debugLog.log(`Unhandled error during load: ${err}`, 'error');
   });
 
-  // Start button — boots the emulator and starts display rendering
-  btnStart.addEventListener('click', () => {
-    if (!loader.module) {
-      debugLog('Module not ready yet', 'warn');
-      return;
-    }
-
-    debugLog('Starting emulator...');
-    btnStart.disabled = true;
-    btnReboot.disabled = false;
-    btnWipe.disabled = false;
-
-    // Create and start the display renderer
-    try {
-      displayRenderer = new DisplayRenderer(canvas, loader.module);
-
-      // When first non-blank frame is detected, hide loading overlay
-      displayRenderer.onFirstFrame = () => {
-        debugLog('First VGA frame detected — display active');
-        loadingOverlay.classList.add('fade-out');
-        setTimeout(() => {
-          loadingOverlay.classList.add('hidden');
-        }, 500);
-      };
-
-      displayRenderer.start();
-      debugLog('Display render loop started (~30 FPS polling)');
-
-      // Set up keyboard input handler on the display container
-      const container = document.getElementById('display-container');
-      if (container) {
-        keyboardHandler = new KeyboardHandler(container, loader.module);
-        keyboardHandler.attach();
-        debugLog('Keyboard input handler attached');
-
-        // Set up mouse input handler on the canvas
-        mouseHandler = new MouseHandler(canvas, container, loader.module);
-        mouseHandler.attach();
-        debugLog('Mouse input handler attached');
-
-        // Focus the container for keyboard input
-        container.focus();
-      }
-
-    } catch (err: unknown) {
-      debugLog(`Failed to start display: ${err}`, 'error');
-    }
-  });
-
-  // Reboot button — placeholder
-  btnReboot.addEventListener('click', () => {
-    debugLog('Reboot clicked — will be implemented in a later feature.');
-  });
-
-  // Wipe & Reset button — placeholder
-  btnWipe.addEventListener('click', () => {
-    debugLog('Wipe & Reset clicked — will be implemented in a later feature.');
-  });
-
-  // Fullscreen button
-  btnFullscreen.addEventListener('click', () => {
-    const container = document.getElementById('display-container');
-    if (!container) return;
-
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {
-        debugLog('Failed to exit fullscreen', 'warn');
-      });
-    } else {
-      container.requestFullscreen().catch(() => {
-        debugLog('Fullscreen not supported or denied', 'warn');
-      });
-    }
-  });
-
-  // Clean up display and input handlers on unload
+  // Clean up on unload
   window.addEventListener('beforeunload', () => {
     if (keyboardHandler) {
       keyboardHandler.detach();
@@ -213,6 +232,7 @@ function init(): void {
     if (displayRenderer) {
       displayRenderer.stop();
     }
+    controls.destroy();
   });
 }
 
