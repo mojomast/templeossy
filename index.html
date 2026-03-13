@@ -72,6 +72,24 @@
       </main>
     </div>
 
+    <!-- Multi-tab warning overlay -->
+    <div id="multi-tab-warning" class="multi-tab-warning hidden">
+      <div class="multi-tab-warning-content">
+        <div class="warning-icon">⚠️</div>
+        <h2 class="warning-title">Another instance is already running</h2>
+        <p class="warning-text">
+          TempleOS Browser is already open in another tab. Running multiple instances
+          simultaneously may corrupt your saved data. Please close the other tab first.
+        </p>
+      </div>
+    </div>
+
+    <!-- Storage notification toast -->
+    <div id="storage-toast" class="storage-toast hidden">
+      <span id="storage-toast-message" class="storage-toast-message"></span>
+      <button id="storage-toast-close" class="storage-toast-close">&times;</button>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

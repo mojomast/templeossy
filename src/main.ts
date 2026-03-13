@@ -17,6 +17,7 @@ import {
   getBootOrderFlag,
   type BootMedium,
 } from './storage';
+import { TabLockManager } from './tab-lock';
 
 /**
  * Determine boot mode from URL query parameter.
@@ -63,9 +64,62 @@ function showResumeDialog(): Promise<'resume' | 'fresh'> {
   });
 }
 
+/**
+ * Show the multi-tab warning overlay.
+ */
+function showMultiTabWarning(): void {
+  const warning = document.getElementById('multi-tab-warning');
+  if (warning) {
+    warning.classList.remove('hidden');
+  }
+}
+
+/**
+ * Show a storage notification toast.
+ */
+function showStorageToast(message: string): void {
+  const toast = document.getElementById('storage-toast');
+  const toastMessage = document.getElementById('storage-toast-message');
+  const toastClose = document.getElementById('storage-toast-close');
+
+  if (toast && toastMessage) {
+    toastMessage.textContent = message;
+    toast.classList.remove('hidden');
+
+    // Auto-hide after 15 seconds
+    const autoHide = setTimeout(() => {
+      toast.classList.add('hidden');
+    }, 15_000);
+
+    // Close button
+    if (toastClose) {
+      const closeHandler = (): void => {
+        clearTimeout(autoHide);
+        toast.classList.add('hidden');
+        toastClose.removeEventListener('click', closeHandler);
+      };
+      toastClose.addEventListener('click', closeHandler);
+    }
+  }
+}
+
 /** Initialize the application. */
 async function init(): Promise<void> {
   const bootMode = getBootMode();
+
+  // ─── Multi-tab safety: acquire tab lock ──────────────────────────────
+  const tabLock = new TabLockManager();
+  const lockResult = await tabLock.acquire();
+
+  if (!lockResult.acquired && lockResult.reason === 'held-by-other-tab') {
+    showMultiTabWarning();
+    // Don't proceed with emulator initialization — block the tab
+    return;
+  }
+
+  // If Web Locks API is unavailable, proceed with a warning in the debug log
+  // (logged later once debug logger is set up)
+  const tabLockUnavailable = !lockResult.acquired && lockResult.reason === 'api-unavailable';
 
   // Gather loading UI elements
   const loadingElements: LoadingElements = {
@@ -108,6 +162,13 @@ async function init(): Promise<void> {
   let mouseHandler: MouseHandler | null = null;
   let loader: EmulatorLoader | null = null;
   let autoSaveManager: AutoSaveManager | null = null;
+
+  // Log tab lock status
+  if (tabLockUnavailable) {
+    debugLog.log('Web Locks API unavailable — multi-tab protection disabled', 'warn');
+  } else {
+    debugLog.log('Tab lock acquired ✓');
+  }
 
   // Initialize disk storage
   const diskStorage = new DiskStorage();
@@ -225,14 +286,33 @@ async function init(): Promise<void> {
       debugLog.log('Mouse input handler attached');
 
       // Start auto-save for disk persistence (TempleOS mode only)
-      if (bootMode === 'templeos' && loader) {
+      // CD-only session safety: when booting from CD with an existing saved disk
+      // (user chose "Start fresh"), do NOT auto-save. This prevents overwriting
+      // the installed disk with an empty/CD-only session disk.
+      // Auto-save only runs when:
+      // - Booting from disk (resume) — user explicitly resumed, save their changes
+      // - First visit (no saved disk) — save the new disk after install
+      const shouldAutoSave = bootMode === 'templeos' && (
+        bootMedium === 'disk' ||  // Resume: save changes
+        !savedDiskData             // First visit: save new disk after install
+      );
+
+      if (shouldAutoSave && loader) {
         const currentLoader = loader;
         autoSaveManager = new AutoSaveManager(
           diskStorage,
           () => currentLoader.readDiskImage(),
         );
+        autoSaveManager.onStorageError = (error) => {
+          debugLog.log(`Storage error (${error.type}): ${error.message}`, 'error');
+          showStorageToast(error.type === 'quota'
+            ? 'Storage full — cannot save disk image. Your changes may be lost.'
+            : error.message);
+        };
         autoSaveManager.start();
         debugLog.log('Auto-save started (every 30 seconds + on tab close)');
+      } else if (bootMode === 'templeos' && bootMedium === 'cd' && savedDiskData) {
+        debugLog.log('CD-only session: auto-save disabled to protect existing disk image');
       }
 
       // Focus the container for keyboard input
@@ -267,12 +347,13 @@ async function init(): Promise<void> {
   }
 
   /**
-   * Wipe & Reset: clear disk storage and restart fresh.
+   * Wipe & Reset: clear disk storage, recreate empty disk, restart fresh.
+   * After wipe, next visit is like first visit (no resume choice).
    */
   function wipeAndReset(): void {
     debugLog.log('Wipe & Reset — clearing storage and restarting...');
 
-    // Stop auto-save first
+    // Stop auto-save first to prevent race with delete
     if (autoSaveManager) {
       void autoSaveManager.stop();
       autoSaveManager = null;
@@ -280,10 +361,13 @@ async function init(): Promise<void> {
 
     diskStorage.deleteDisk().then(() => {
       debugLog.log('Disk image deleted from storage');
-      // Reload page for a fresh start
+      // Release tab lock before reload so the new tab can acquire it
+      tabLock.release();
+      // Reload page for a fresh start (boots from CD, no resume choice)
       window.location.reload();
     }).catch((err) => {
       debugLog.log(`Failed to delete disk: ${err}`, 'error');
+      tabLock.release();
       // Reload anyway
       window.location.reload();
     });
@@ -362,6 +446,7 @@ async function init(): Promise<void> {
       displayRenderer.stop();
     }
     controls.destroy();
+    tabLock.release();
     // Note: AutoSaveManager has its own beforeunload handler for disk flush
   });
 }

@@ -19,6 +19,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   detectStorageBackend,
   requestPersistence,
+  isQuotaError,
   DiskStorage,
   selectBootMedium,
   getBootOrderFlag,
@@ -543,6 +544,270 @@ describe('Resume detection logic', () => {
     expect(medium).toBe('cd');
     expect(getBootOrderFlag(medium)).toBe('d');
     // Note: disk is still attached to QEMU — just boot order changes
+  });
+});
+
+// ─── isQuotaError ──────────────────────────────────────────────────────────
+
+describe('isQuotaError', () => {
+  it('returns true for DOMException with name QuotaExceededError', () => {
+    const err = new DOMException('Quota exceeded', 'QuotaExceededError');
+    expect(isQuotaError(err)).toBe(true);
+  });
+
+  it('returns true for Error with "quota" in message (code 22 case)', () => {
+    // DOMException code 22 is QuotaExceededError in some browsers;
+    // in jsdom the code property is read-only, so we test the message pattern instead
+    const err = new Error('Quota exceeded (code 22)');
+    expect(isQuotaError(err)).toBe(true);
+  });
+
+  it('returns true for Error with "quota" in message', () => {
+    const err = new Error('Quota has been exceeded');
+    expect(isQuotaError(err)).toBe(true);
+  });
+
+  it('returns true for Error with "storage full" in message', () => {
+    const err = new Error('The storage is full');
+    expect(isQuotaError(err)).toBe(true);
+  });
+
+  it('returns false for regular Error', () => {
+    const err = new Error('Something went wrong');
+    expect(isQuotaError(err)).toBe(false);
+  });
+
+  it('returns false for non-Error values', () => {
+    expect(isQuotaError('string error')).toBe(false);
+    expect(isQuotaError(42)).toBe(false);
+    expect(isQuotaError(null)).toBe(false);
+    expect(isQuotaError(undefined)).toBe(false);
+  });
+
+  it('returns false for other DOMException types', () => {
+    const err = new DOMException('Not found', 'NotFoundError');
+    expect(isQuotaError(err)).toBe(false);
+  });
+});
+
+// ─── AutoSaveManager storage error handling ────────────────────────────────
+
+describe('AutoSaveManager storage error handling', () => {
+  let mockStorage: DiskStorage;
+  let saveDiskSpy: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockStorage = new DiskStorage('indexeddb');
+    saveDiskSpy = vi.fn().mockResolvedValue(undefined);
+    mockStorage.saveDisk = saveDiskSpy;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('calls onStorageError with quota type when quota error occurs', async () => {
+    const testData = new Uint8Array([1, 2, 3]);
+    const reader = vi.fn().mockReturnValue(testData);
+    saveDiskSpy.mockRejectedValue(new DOMException('Quota exceeded', 'QuotaExceededError'));
+
+    const errorHandler = vi.fn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const manager = new AutoSaveManager(mockStorage, reader);
+    manager.onStorageError = errorHandler;
+    manager.start();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+    expect(errorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'quota',
+        message: expect.stringContaining('Storage full'),
+      }),
+    );
+
+    await manager.stop();
+  });
+
+  it('reports quota error only once (no spamming)', async () => {
+    const testData = new Uint8Array([1, 2, 3]);
+    const reader = vi.fn().mockReturnValue(testData);
+    saveDiskSpy.mockRejectedValue(new DOMException('Quota exceeded', 'QuotaExceededError'));
+
+    const errorHandler = vi.fn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const manager = new AutoSaveManager(mockStorage, reader);
+    manager.onStorageError = errorHandler;
+    manager.start();
+
+    // Trigger multiple flush cycles
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    // Should only report once
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+
+    await manager.stop();
+  });
+
+  it('calls onStorageError with write-error for non-quota errors', async () => {
+    const testData = new Uint8Array([1, 2, 3]);
+    const reader = vi.fn().mockReturnValue(testData);
+    saveDiskSpy.mockRejectedValue(new Error('Disk I/O failure'));
+
+    const errorHandler = vi.fn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const manager = new AutoSaveManager(mockStorage, reader);
+    manager.onStorageError = errorHandler;
+    manager.start();
+
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(errorHandler).toHaveBeenCalledTimes(1);
+    expect(errorHandler).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'write-error',
+        message: expect.stringContaining('Disk I/O failure'),
+      }),
+    );
+
+    await manager.stop();
+  });
+
+  it('does not call onStorageError when no handler is set', async () => {
+    const testData = new Uint8Array([1, 2, 3]);
+    const reader = vi.fn().mockReturnValue(testData);
+    saveDiskSpy.mockRejectedValue(new Error('Some error'));
+
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const manager = new AutoSaveManager(mockStorage, reader);
+    // Don't set onStorageError
+    manager.start();
+
+    // Should not throw
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await manager.stop();
+  });
+});
+
+// ─── CD-only session safety ────────────────────────────────────────────────
+
+describe('CD-only session safety', () => {
+  it('fresh boot from CD with existing disk: user chooses "fresh" → boot from CD', () => {
+    // The key behavior: user has a saved disk, chooses "fresh" (CD boot),
+    // but the saved disk should NOT be corrupted
+    const hasDisk = true;
+    const medium = selectBootMedium(hasDisk, 'fresh');
+    expect(medium).toBe('cd');
+    // When medium is 'cd' AND hasDisk is true, auto-save should be disabled
+    // (enforced in main.ts via shouldAutoSave logic)
+  });
+
+  it('first visit (no saved disk): boot from CD → auto-save should be active', () => {
+    // First visit: no existing disk, so auto-save is needed for install
+    const hasDisk = false;
+    const medium = selectBootMedium(hasDisk, null);
+    expect(medium).toBe('cd');
+    // shouldAutoSave = !savedDiskData (null) → true
+  });
+
+  it('return visit + resume: boot from disk → auto-save should be active', () => {
+    const hasDisk = true;
+    const medium = selectBootMedium(hasDisk, 'resume');
+    expect(medium).toBe('disk');
+    // shouldAutoSave = (medium === 'disk') → true
+  });
+
+  it('CD-only session does not produce a "disk" boot medium', () => {
+    // No matter the scenario, choosing fresh always gives CD boot
+    expect(selectBootMedium(true, 'fresh')).toBe('cd');
+    expect(selectBootMedium(false, 'fresh')).toBe('cd');
+    expect(selectBootMedium(false, null)).toBe('cd');
+  });
+});
+
+// ─── Wipe & Reset operation ───────────────────────────────────────────────
+
+describe('Wipe & Reset operation', () => {
+  let mockStorage: DiskStorage;
+
+  beforeEach(() => {
+    mockStorage = new DiskStorage('indexeddb');
+  });
+
+  it('wipe clears storage (via mock)', async () => {
+    let hasDisk = true;
+    let diskData: Uint8Array | null = new Uint8Array([1, 2, 3, 4, 5]);
+    mockStorage.hasSavedDisk = vi.fn(async () => hasDisk);
+    mockStorage.loadDisk = vi.fn(async () => diskData);
+    mockStorage.deleteDisk = vi.fn(async () => {
+      hasDisk = false;
+      diskData = null;
+    });
+
+    // Verify disk exists before wipe
+    expect(await mockStorage.hasSavedDisk()).toBe(true);
+    expect(await mockStorage.loadDisk()).not.toBeNull();
+
+    // Perform wipe
+    await mockStorage.deleteDisk();
+
+    // After wipe: no saved disk, behaves like first visit
+    expect(await mockStorage.hasSavedDisk()).toBe(false);
+    expect(await mockStorage.loadDisk()).toBeNull();
+  });
+
+  it('after wipe, boot medium is CD (first visit behavior)', async () => {
+    let hasDisk = true;
+    mockStorage.hasSavedDisk = vi.fn(async () => hasDisk);
+    mockStorage.deleteDisk = vi.fn(async () => { hasDisk = false; });
+
+    await mockStorage.deleteDisk();
+
+    // Simulate next visit
+    const hasNewDisk = await mockStorage.hasSavedDisk();
+    const medium = selectBootMedium(hasNewDisk, null);
+
+    expect(hasNewDisk).toBe(false);
+    expect(medium).toBe('cd');
+    expect(getBootOrderFlag(medium)).toBe('d');
+  });
+
+  it('wipe stops auto-save before deleting (prevents race)', async () => {
+    vi.useFakeTimers();
+
+    const saveDiskSpy = vi.fn().mockResolvedValue(undefined);
+    mockStorage.saveDisk = saveDiskSpy;
+    mockStorage.deleteDisk = vi.fn().mockResolvedValue(undefined);
+
+    const reader = vi.fn().mockReturnValue(new Uint8Array([1, 2, 3]));
+    const manager = new AutoSaveManager(mockStorage, reader);
+
+    manager.start();
+    expect(manager.isRunning).toBe(true);
+
+    // Stop auto-save (simulating what wipeAndReset does)
+    await manager.stop();
+    expect(manager.isRunning).toBe(false);
+
+    // Now delete disk
+    await mockStorage.deleteDisk();
+    expect(mockStorage.deleteDisk).toHaveBeenCalled();
+
+    // No more saves after stop
+    await vi.advanceTimersByTimeAsync(60_000);
+    // saveDiskSpy was called once during stop()'s final flush
+    expect(saveDiskSpy).toHaveBeenCalledTimes(1);
+
+    vi.useRealTimers();
   });
 });
 

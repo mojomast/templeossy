@@ -202,7 +202,7 @@ export class ControlsManager {
     if (this._state !== 'running') return;
 
     const confirmed = confirm(
-      'Wipe & Reset? This will clear all browser storage and start fresh. All saved data will be lost.',
+      'This will delete all saved data and start fresh. Are you sure?',
     );
     if (!confirmed) return;
 

@@ -13,6 +13,7 @@
  *   deleteDisk()            — delete disk image from browser storage
  *   hasSavedDisk()          — check if a saved disk image exists
  *   requestPersistence()    — request navigator.storage.persist()
+ *   isQuotaError(err)       — check if an error is a storage quota error
  */
 
 /** Storage backend type. */
@@ -60,6 +61,36 @@ export async function requestPersistence(): Promise<boolean> {
   }
   return false;
 }
+
+// ─── Storage Quota Error Detection ─────────────────────────────────────────
+
+/**
+ * Check if an error is a storage quota exceeded error.
+ * Works for both OPFS and IndexedDB storage backends.
+ *
+ * Common error patterns:
+ * - DOMException with name 'QuotaExceededError'
+ * - DOMException with code 22
+ * - Errors with 'quota' in the message
+ */
+export function isQuotaError(err: unknown): boolean {
+  if (err instanceof DOMException) {
+    return err.name === 'QuotaExceededError' || err.code === 22;
+  }
+  if (err instanceof Error) {
+    return /quota/i.test(err.message) || /storage.*full/i.test(err.message);
+  }
+  return false;
+}
+
+/**
+ * Callback type for storage error notifications.
+ * Used by AutoSaveManager to report write failures to the UI.
+ */
+export type StorageErrorHandler = (error: {
+  type: 'quota' | 'write-error';
+  message: string;
+}) => void;
 
 // ─── OPFS Backend ──────────────────────────────────────────────────────────
 
@@ -366,6 +397,11 @@ export type DiskDataReader = () => Uint8Array | null;
 /**
  * AutoSaveManager periodically flushes the disk image to browser storage
  * and also flushes on beforeunload.
+ *
+ * Supports:
+ * - Configurable error handler for quota/write errors (UI notifications)
+ * - CD-only session safety: can be paused/disabled to prevent saving
+ *   during CD-only sessions that should not overwrite existing disk data
  */
 export class AutoSaveManager {
   private storage: DiskStorage;
@@ -373,10 +409,20 @@ export class AutoSaveManager {
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private _isRunning = false;
   private boundBeforeUnload: (() => void) | null = null;
+  private _onStorageError: StorageErrorHandler | null = null;
+  private _quotaErrorReported = false;
 
   constructor(storage: DiskStorage, readDiskData: DiskDataReader) {
     this.storage = storage;
     this.readDiskData = readDiskData;
+  }
+
+  /**
+   * Set a callback to handle storage errors (quota exceeded, write failures).
+   * The callback receives an error object with type and message for UI display.
+   */
+  set onStorageError(handler: StorageErrorHandler | null) {
+    this._onStorageError = handler;
   }
 
   get isRunning(): boolean {
@@ -427,6 +473,7 @@ export class AutoSaveManager {
 
   /**
    * Flush disk data to storage asynchronously.
+   * Detects quota errors and reports them via onStorageError callback.
    */
   async flush(): Promise<void> {
     try {
@@ -436,6 +483,22 @@ export class AutoSaveManager {
       }
     } catch (err) {
       console.warn('[AutoSave] Failed to save disk:', err);
+
+      if (isQuotaError(err)) {
+        // Only report quota error once to avoid spamming the user
+        if (!this._quotaErrorReported) {
+          this._quotaErrorReported = true;
+          this._onStorageError?.({
+            type: 'quota',
+            message: 'Storage full — cannot save disk image. Your changes may be lost. Try closing other tabs or clearing browser data to free space.',
+          });
+        }
+      } else {
+        this._onStorageError?.({
+          type: 'write-error',
+          message: `Failed to save disk image: ${err instanceof Error ? err.message : String(err)}`,
+        });
+      }
     }
   }
 
