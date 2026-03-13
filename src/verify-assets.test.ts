@@ -24,9 +24,8 @@ describe('Build Artifacts', () => {
     expect(existsSync(file)).toBe(true);
     const stats = statSync(file);
     // The .data file should be at least as large as the ISO (17,817,600 bytes)
-    // With LZ4 compression it may be smaller, but BIOS files add ~312KB
-    // The compressed size should be at least 15MB
-    expect(stats.size).toBeGreaterThanOrEqual(15 * 1024 * 1024);
+    // Uncompressed (no LZ4) — BIOS files add ~312KB
+    expect(stats.size).toBeGreaterThanOrEqual(17 * 1024 * 1024);
   });
 
   it('load.js exists and is non-empty', () => {
@@ -86,11 +85,11 @@ describe('Load.js Content', () => {
     expect(content).toContain('qemu-system-x86_64.data');
   });
 
-  it('includes LZ4 decompression support', async () => {
+  it('does not require LZ4 decompression (uncompressed packaging)', async () => {
     const { readFileSync } = await import('fs');
     const content = readFileSync(resolve(PUBLIC_EMULATOR, 'load.js'), 'utf-8');
-    // LZ4 compressed packages contain decompression logic
-    expect(content).toContain('LZ4');
+    // Assets are packaged without --lz4 to avoid requiring Module.LZ4 at runtime
+    expect(content).not.toContain('LZ4');
   });
 
   it('maps BIOS files to /pack/ paths', async () => {

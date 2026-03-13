@@ -4,12 +4,59 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TempleOS Browser</title>
+    <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
     <div id="app">
-      <h1>TempleOS Browser</h1>
-      <p>Loading...</p>
+      <!-- Header -->
+      <header class="header">
+        <h1>TempleOS Browser</h1>
+      </header>
+
+      <!-- Main content area -->
+      <main class="main">
+        <!-- Canvas container for VGA display -->
+        <div id="display-container" class="display-container" tabindex="0">
+          <canvas id="display" width="640" height="480"></canvas>
+
+          <!-- Loading overlay -->
+          <div id="loading-overlay" class="loading-overlay">
+            <div class="loading-content">
+              <div class="loading-spinner"></div>
+              <p id="loading-status" class="loading-status">Preparing...</p>
+              <div id="progress-bar" class="progress-bar">
+                <div id="progress-fill" class="progress-fill"></div>
+              </div>
+              <!-- Error display -->
+              <div id="error-container" class="error-container hidden">
+                <div class="error-icon">⚠️</div>
+                <p id="error-message" class="error-message"></p>
+                <p id="error-remediation" class="error-remediation"></p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Controls area -->
+        <div class="controls">
+          <button id="btn-start" class="btn btn-primary" disabled>Start</button>
+          <button id="btn-reboot" class="btn btn-secondary" disabled>Reboot</button>
+          <button id="btn-wipe" class="btn btn-danger" disabled>Wipe &amp; Reset</button>
+          <button id="btn-fullscreen" class="btn btn-secondary" disabled>Fullscreen</button>
+          <button id="btn-debug-toggle" class="btn btn-secondary">Debug Log</button>
+        </div>
+
+        <!-- Debug log panel (collapsible) -->
+        <div id="debug-panel" class="debug-panel hidden">
+          <div class="debug-header">
+            <span>Debug Log</span>
+            <button id="btn-debug-clear" class="btn btn-small">Clear</button>
+          </div>
+          <div id="debug-log" class="debug-log"></div>
+        </div>
+      </main>
     </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

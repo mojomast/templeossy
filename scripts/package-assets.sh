@@ -85,7 +85,6 @@ docker run --rm \
             --preload pack/kvmvapic.bin@/pack/kvmvapic.bin \
             --preload pack/linuxboot_dma.bin@/pack/linuxboot_dma.bin \
             --preload pack/TempleOSCDV5.03.ISO@/pack/TempleOSCDV5.03.ISO \
-            --lz4 \
             --js-output=/out/load.js \
             --no-node
     '
