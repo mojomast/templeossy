@@ -43,7 +43,6 @@ function init(): void {
   // Gather DOM elements
   const canvas = document.getElementById('display') as HTMLCanvasElement;
   const displayContainer = document.getElementById('display-container')!;
-  const loadingOverlay = document.getElementById('loading-overlay')!;
   const debugPanel = document.getElementById('debug-panel')!;
   const debugLogEl = document.getElementById('debug-log')!;
   const btnDebugToggle = document.getElementById('btn-debug-toggle') as HTMLButtonElement;
@@ -108,16 +107,17 @@ function init(): void {
     debugLog.log('Starting emulator...');
     controls.setState('running');
 
+    // Re-show loading overlay with booting message to bridge the gap
+    // between Start click and first VGA frame (fixes VAL-DISP-006)
+    loadingUI.show('Booting TempleOS...');
+
     try {
       displayRenderer = new DisplayRenderer(canvas, loader.module);
 
       // When first non-blank frame is detected, hide loading overlay
       displayRenderer.onFirstFrame = () => {
         debugLog.log('First VGA frame detected — display active');
-        loadingOverlay.classList.add('fade-out');
-        setTimeout(() => {
-          loadingOverlay.classList.add('hidden');
-        }, 500);
+        loadingUI.hide();
       };
 
       displayRenderer.start();

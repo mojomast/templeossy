@@ -118,4 +118,40 @@ export class LoadingUI {
     this.elements.progressFill.classList.remove('indeterminate');
     this.elements.statusText.textContent = formatProgress(loaded, total);
   }
+
+  /**
+   * Show the loading overlay with a custom status message.
+   * Used to re-show the overlay after it was hidden (e.g., after 'ready' phase)
+   * when the user clicks Start and the emulator is booting.
+   */
+  show(statusMessage: string): void {
+    const { overlay, progressBar, progressFill, statusText, errorContainer } = this.elements;
+
+    // Make overlay visible
+    overlay.classList.remove('hidden', 'fade-out');
+
+    // Set status text
+    statusText.textContent = statusMessage;
+
+    // Show indeterminate progress bar
+    progressBar.classList.remove('hidden');
+    progressFill.style.width = '100%';
+    progressFill.classList.add('indeterminate');
+
+    // Hide any error state
+    errorContainer.classList.add('hidden');
+  }
+
+  /**
+   * Hide the loading overlay with a fade-out transition.
+   * Used when the first VGA frame is detected to smoothly transition
+   * from the loading overlay to the live display.
+   */
+  hide(): void {
+    const { overlay } = this.elements;
+    overlay.classList.add('fade-out');
+    setTimeout(() => {
+      overlay.classList.add('hidden');
+    }, 500);
+  }
 }
