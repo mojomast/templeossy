@@ -71,7 +71,7 @@ Mouse: similar flow via _qemu_input_send_mouse(dx, dy, buttons)
 
 ## Key Design Decisions
 
-1. **ktock/qemu-wasm fork over upstream**: Fork has TCG JIT backend for better performance. Upstream only has TCI (interpreter).
+1. **ktock/qemu-wasm fork over upstream**: Fork has TCG JIT backend for better performance. Upstream only has TCI (interpreter). Pinned to commit 8604ed49. Three source patches required: (a) osdep.h getloadavg guard for Emscripten, (b) memalign.c aligned_alloc fallback, (c) ui/meson.build to include emscripten.c.
 2. **Custom display backend over SDL**: Emscripten SDL exists but QEMU's SDL backend has threading conflicts with PROXY_TO_PTHREAD. Custom backend is simpler and proven by pebble-qemu-wasm.
 3. **setInterval over requestAnimationFrame**: rAF is hijacked by PROXY_TO_PTHREAD. setInterval works correctly from the main thread.
 4. **OPFS over IndexedDB**: OPFS has synchronous access in workers, better for large file I/O. IndexedDB is the fallback.
