@@ -7,6 +7,8 @@
 import { EmulatorLoader, checkSharedArrayBuffer, type BootMode } from './emulator';
 import { LoadingUI, type LoadingElements } from './loading';
 import { DisplayRenderer } from './display';
+import { KeyboardHandler } from './input';
+import { MouseHandler } from './mouse';
 
 /** Append a timestamped entry to the debug log. */
 function debugLog(message: string, level: 'info' | 'warn' | 'error' = 'info'): void {
@@ -68,8 +70,10 @@ function init(): void {
   const canvas = document.getElementById('display') as HTMLCanvasElement;
   const loadingOverlay = document.getElementById('loading-overlay')!;
 
-  // Track display renderer
+  // Track display renderer and input handlers
   let displayRenderer: DisplayRenderer | null = null;
+  let keyboardHandler: KeyboardHandler | null = null;
+  let mouseHandler: MouseHandler | null = null;
 
   // Debug panel toggle
   btnDebugToggle.addEventListener('click', () => {
@@ -151,9 +155,21 @@ function init(): void {
       displayRenderer.start();
       debugLog('Display render loop started (~30 FPS polling)');
 
-      // Focus the canvas for keyboard input
+      // Set up keyboard input handler on the display container
       const container = document.getElementById('display-container');
-      container?.focus();
+      if (container) {
+        keyboardHandler = new KeyboardHandler(container, loader.module);
+        keyboardHandler.attach();
+        debugLog('Keyboard input handler attached');
+
+        // Set up mouse input handler on the canvas
+        mouseHandler = new MouseHandler(canvas, container, loader.module);
+        mouseHandler.attach();
+        debugLog('Mouse input handler attached');
+
+        // Focus the container for keyboard input
+        container.focus();
+      }
 
     } catch (err: unknown) {
       debugLog(`Failed to start display: ${err}`, 'error');
@@ -186,8 +202,14 @@ function init(): void {
     }
   });
 
-  // Log display renderer status on cleanup
+  // Clean up display and input handlers on unload
   window.addEventListener('beforeunload', () => {
+    if (keyboardHandler) {
+      keyboardHandler.detach();
+    }
+    if (mouseHandler) {
+      mouseHandler.detach();
+    }
     if (displayRenderer) {
       displayRenderer.stop();
     }
