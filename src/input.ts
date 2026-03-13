@@ -106,26 +106,26 @@ export const SCANCODE_MAP: Record<string, number> = {
   ControlLeft: 0x1D,
   AltLeft: 0x38,
   Space: 0x39,
-  AltRight: 0x38,
-  ControlRight: 0x1D,
+  AltRight: 0xB8,       // Extended: 0x38 | 0x80
+  ControlRight: 0x9D,   // Extended: 0x1D | 0x80
 
-  // Navigation keys
-  Insert: 0x52,
-  Delete: 0x53,
-  Home: 0x47,
-  End: 0x4F,
-  PageUp: 0x49,
-  PageDown: 0x51,
+  // Navigation keys (extended — QEMU key numbers with 0x80 bit set)
+  Insert: 0xD2,         // Extended: 0x52 | 0x80
+  Delete: 0xD3,         // Extended: 0x53 | 0x80
+  Home: 0xC7,           // Extended: 0x47 | 0x80
+  End: 0xCF,            // Extended: 0x4F | 0x80
+  PageUp: 0xC9,         // Extended: 0x49 | 0x80
+  PageDown: 0xD1,       // Extended: 0x51 | 0x80
 
-  // Arrow keys
-  ArrowUp: 0x48,
-  ArrowDown: 0x50,
-  ArrowLeft: 0x4B,
-  ArrowRight: 0x4D,
+  // Arrow keys (extended — QEMU key numbers with 0x80 bit set)
+  ArrowUp: 0xC8,        // Extended: 0x48 | 0x80
+  ArrowDown: 0xD0,      // Extended: 0x50 | 0x80
+  ArrowLeft: 0xCB,      // Extended: 0x4B | 0x80
+  ArrowRight: 0xCD,     // Extended: 0x4D | 0x80
 
   // Numpad
   NumLock: 0x45,
-  NumpadDivide: 0x35,
+  NumpadDivide: 0xB5,   // Extended: 0x35 | 0x80
   NumpadMultiply: 0x37,
   NumpadSubtract: 0x4A,
   Numpad7: 0x47,
@@ -140,7 +140,7 @@ export const SCANCODE_MAP: Record<string, number> = {
   Numpad3: 0x51,
   Numpad0: 0x52,
   NumpadDecimal: 0x53,
-  NumpadEnter: 0x1C,
+  NumpadEnter: 0x9C,    // Extended: 0x1C | 0x80
 };
 
 /**

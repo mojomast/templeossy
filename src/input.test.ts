@@ -87,20 +87,20 @@ describe('SCANCODE_MAP', () => {
       expect(SCANCODE_MAP['Space']).toBe(0x39);
     });
 
-    it('maps arrow keys correctly', () => {
-      expect(SCANCODE_MAP['ArrowUp']).toBe(0x48);
-      expect(SCANCODE_MAP['ArrowDown']).toBe(0x50);
-      expect(SCANCODE_MAP['ArrowLeft']).toBe(0x4B);
-      expect(SCANCODE_MAP['ArrowRight']).toBe(0x4D);
+    it('maps arrow keys correctly (extended scancodes with 0x80 bit)', () => {
+      expect(SCANCODE_MAP['ArrowUp']).toBe(0xC8);
+      expect(SCANCODE_MAP['ArrowDown']).toBe(0xD0);
+      expect(SCANCODE_MAP['ArrowLeft']).toBe(0xCB);
+      expect(SCANCODE_MAP['ArrowRight']).toBe(0xCD);
     });
 
-    it('maps Home, End, Insert, Delete, PageUp, PageDown', () => {
-      expect(SCANCODE_MAP['Home']).toBe(0x47);
-      expect(SCANCODE_MAP['End']).toBe(0x4F);
-      expect(SCANCODE_MAP['Insert']).toBe(0x52);
-      expect(SCANCODE_MAP['Delete']).toBe(0x53);
-      expect(SCANCODE_MAP['PageUp']).toBe(0x49);
-      expect(SCANCODE_MAP['PageDown']).toBe(0x51);
+    it('maps Home, End, Insert, Delete, PageUp, PageDown (extended scancodes with 0x80 bit)', () => {
+      expect(SCANCODE_MAP['Home']).toBe(0xC7);
+      expect(SCANCODE_MAP['End']).toBe(0xCF);
+      expect(SCANCODE_MAP['Insert']).toBe(0xD2);
+      expect(SCANCODE_MAP['Delete']).toBe(0xD3);
+      expect(SCANCODE_MAP['PageUp']).toBe(0xC9);
+      expect(SCANCODE_MAP['PageDown']).toBe(0xD1);
     });
   });
 
@@ -147,6 +147,14 @@ describe('SCANCODE_MAP', () => {
     it('maps CapsLock to 0x3A', () => {
       expect(SCANCODE_MAP['CapsLock']).toBe(0x3A);
     });
+
+    it('maps ControlRight to 0x9D (extended scancode with 0x80 bit)', () => {
+      expect(SCANCODE_MAP['ControlRight']).toBe(0x9D);
+    });
+
+    it('maps AltRight to 0xB8 (extended scancode with 0x80 bit)', () => {
+      expect(SCANCODE_MAP['AltRight']).toBe(0xB8);
+    });
   });
 
   describe('punctuation and symbol keys', () => {
@@ -162,6 +170,16 @@ describe('SCANCODE_MAP', () => {
       expect(SCANCODE_MAP['Comma']).toBe(0x33);
       expect(SCANCODE_MAP['Period']).toBe(0x34);
       expect(SCANCODE_MAP['Slash']).toBe(0x35);
+    });
+  });
+
+  describe('extended numpad keys', () => {
+    it('maps NumpadEnter to 0x9C (extended scancode with 0x80 bit)', () => {
+      expect(SCANCODE_MAP['NumpadEnter']).toBe(0x9C);
+    });
+
+    it('maps NumpadDivide to 0xB5 (extended scancode with 0x80 bit)', () => {
+      expect(SCANCODE_MAP['NumpadDivide']).toBe(0xB5);
     });
   });
 });
