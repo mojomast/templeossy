@@ -1,0 +1,112 @@
+{
+  "milestone": "browser-boot",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "npm test", "exitCode": 0, "detail": "7 test files, 161 tests passed in 4.68s" },
+    "typecheck": { "passed": true, "command": "npm run typecheck", "exitCode": 0 },
+    "lint": { "passed": true, "command": "npm run lint", "exitCode": 0, "detail": "No linter configured yet (echo stub)" }
+  },
+  "reviewsSummary": {
+    "total": 5,
+    "passed": 5,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "nonBlockingIssues": [
+    {
+      "featureId": "keyboard-and-mouse-input",
+      "severity": "non_blocking",
+      "description": "Extended PS/2 scancodes (arrow keys, navigation keys, right modifiers, numpad enter/divide) use base scancodes instead of QEMU key numbers with 0x80 bit. ~15 keys affected: arrows map to numpad keys, Home/End/Insert/Delete/PageUp/PageDown map to numpad equivalents. Fix: update SCANCODE_MAP values for these keys.",
+      "affectedKeys": "ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Insert, Delete, Home, End, PageUp, PageDown, ControlRight, AltRight, NumpadEnter, NumpadDivide"
+    },
+    {
+      "featureId": "frontend-skeleton",
+      "severity": "non_blocking",
+      "description": "TypeError over-classification in classifyError(): all TypeErrors classified as 'network' errors. Could mask runtime TypeErrors unrelated to fetch."
+    },
+    {
+      "featureId": "display-and-linux-poc",
+      "severity": "non_blocking",
+      "description": "Empty catch block in render loop silently swallows all errors. Justified for resilience during Wasm memory resizing, but could mask real bugs."
+    },
+    {
+      "featureId": "controls-ui",
+      "severity": "non_blocking",
+      "description": "Silent catch blocks in fullscreen handlers (.catch(() => {})) swallow Fullscreen API errors without any logging."
+    },
+    {
+      "featureId": "controls-ui",
+      "severity": "non_blocking",
+      "description": "Console interception only captures messages prefixed with '[QEMU]'. Emscripten stderr/stdout output without this prefix won't appear in the debug panel."
+    },
+    {
+      "featureId": "frontend-skeleton",
+      "severity": "non_blocking",
+      "description": "Non-null assertions (!) on all DOM element lookups in main.ts. A typo in element IDs would produce null with no helpful error."
+    },
+    {
+      "featureId": "controls-ui",
+      "severity": "non_blocking",
+      "description": "Unused exported formatLogEntry() function is tested but never called at runtime. DebugLogger.log() contains duplicate formatting logic."
+    },
+    {
+      "featureId": "templeos-boot",
+      "severity": "non_blocking",
+      "description": "No error handling around FS.truncate for the 2GB sparse disk image. If truncate fails, QEMU will get a 0-byte disk with no helpful error."
+    }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "library",
+      "description": "Updated build-integration.md: LZ4 status changed from 'Needs verification' to 'resolved' — assets repackaged without --lz4 compression.",
+      "sourceFeature": "frontend-skeleton"
+    },
+    {
+      "target": "library",
+      "description": "Updated architecture.md: Corrected _qemu_input_send_mouse signature from 3 params (dx, dy, buttons) to 4 params (dx, dy, dz, buttons) where dz is scroll wheel delta.",
+      "sourceFeature": "keyboard-and-mouse-input"
+    },
+    {
+      "target": "library",
+      "description": "Added QEMU Key Numbers vs PS/2 Scancodes section to architecture.md documenting the 0x80 bit convention for extended keys. This prevents future workers from using raw PS/2 scancodes instead of QEMU key numbers.",
+      "sourceFeature": "keyboard-and-mouse-input"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Clarify the 'Never swallow errors silently' convention with a carve-out for frame-by-frame render loops and browser API calls where failure is expected/benign (e.g., Fullscreen API rejection). Suggest minimum: log to console.debug or count errors for persistent failure detection.",
+      "evidence": "Three separate features (display-and-linux-poc, controls-ui, frontend-skeleton) used empty catch blocks. display.ts:193 for render loop resilience, controls.ts:210 for Fullscreen API, emulator.ts for various browser API fallbacks. Each reviewer flagged this as conflicting with AGENTS.md convention.",
+      "isSystemic": true
+    },
+    {
+      "target": "AGENTS.md",
+      "suggestion": "Add note under Key Technical Details: 'QEMU key numbers: standard keys use base PS/2 scancodes (0x00-0x7F). Extended keys (arrows, nav, right modifiers) must use scancode | 0x80 (0x80-0xFF). See .factory/library/architecture.md for reference table.'",
+      "evidence": "keyboard-and-mouse-input worker used raw PS/2 scancodes instead of QEMU key numbers for ~15 extended keys. Architecture.md now has the reference but AGENTS.md should point to it to prevent recurrence.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills",
+      "suggestion": "Update frontend-worker skill: (1) Add curl-based verification as explicit fallback when Playwright browser deps are unavailable. (2) Relax strict TDD requirement for features that resume partial implementations — allow 'verify existing tests pass + add new tests' instead of red-green-refactor. (3) Correct _qemu_input_send_mouse to 4 params. (4) Clarify that PS/2 scancode mapping should use QEMU key numbers (not raw PS/2 Set 1).",
+      "evidence": "3 of 5 workers deviated from browser verification due to missing Playwright deps. templeos-boot worker noted TDD not practical for resumed features. keyboard-and-mouse-input worker noted misleading skill guidance on scancodes and mouse params.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": "build-linux-poc.sh should be registered in services.yaml as a command",
+      "reason": "The Linux PoC build script is a one-time development tool, not a recurring service/command. It downloads Alpine assets for a proof-of-concept that's already been validated and isn't needed for ongoing development. Adding it to services.yaml would add clutter for minimal benefit."
+    },
+    {
+      "observation": "environment.md should document missing Playwright system deps",
+      "reason": "Already documented in .factory/library/user-testing.md and docs/playwright-limitations.md (commit b36eddf). Adding to environment.md would be duplicate documentation."
+    },
+    {
+      "observation": "Convention needed for DOM element null assertions",
+      "reason": "This is a valid but low-priority concern. The non-null assertion pattern is common in vanilla TypeScript frontend projects where HTML structure is controlled by the same codebase. Adding a helper function is a nice-to-have refinement, not a convention that needs enforcement across workers."
+    }
+  ],
+  "previousRound": null
+}

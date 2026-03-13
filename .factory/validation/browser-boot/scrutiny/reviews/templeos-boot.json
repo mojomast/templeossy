@@ -1,0 +1,39 @@
+{
+  "featureId": "templeos-boot",
+  "reviewedAt": "2026-03-13T03:30:00.000Z",
+  "commitId": "ecd4af033435ad28bb4e8595276f829716a341e4",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Clean, well-structured implementation that correctly swaps TempleOS as the default boot mode and configures QEMU with all required machine flags. The QEMU args precisely match the validated native flags from docs/native-qemu-validation.md (IDE disk via -hda, legacy BIOS, -boot d, -cdrom, -vga std, -rtc base=localtime, -no-reboot, -nic none), adapted for Wasm/browser (-display emscripten, -accel tcg,tb-size=500, -m 512M). The sparse disk image creation via Emscripten FS (writeFile + truncate to 2GB) is the correct approach for memfs. The preRun refactoring cleanly separates Linux PoC and TempleOS filesystem setup. Default boot mode switch in main.ts is straightforward with linux-poc still selectable via URL param. 9 new unit tests comprehensively cover TempleOS-specific args, IDE/no-virtio verification, cross-mode comparison, and mode isolation. All 161 tests pass, typecheck clean.",
+    "issues": [
+      {
+        "file": "src/emulator.ts",
+        "line": 355,
+        "severity": "non_blocking",
+        "description": "No error handling around FS.truncate for the 2GB sparse disk. If truncate fails (e.g., Emscripten version incompatibility), the disk image would be 0 bytes and QEMU would likely fail with an unhelpful I/O error. Adding a try/catch with a descriptive console.error around the truncate call would improve debuggability."
+      },
+      {
+        "file": "src/emulator.ts",
+        "line": 349,
+        "severity": "non_blocking",
+        "description": "The 2GB DISK_SIZE constant (2147483648) is exactly at the 32-bit signed integer boundary. While JavaScript handles this fine, some Emscripten FS internals may use 32-bit sizes. Worth monitoring during actual browser testing — if TempleOS disk operations fail, this could be the cause."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker handoff has no interactiveChecks field — no manual browser verification was performed. The frontend-worker skill procedure (Section 5) explicitly requires starting the dev server, verifying in browser, and recording interactiveChecks entries. The worker went from passing unit tests directly to commit. While this may be justified if browser testing wasn't feasible in the CI environment, the skill doesn't document when it's acceptable to skip manual verification.",
+      "evidence": "Handoff JSON has no 'interactiveChecks' key in 'verification'. Skill SKILL.md Section 5 says: 'For features that affect the browser UI: Start the dev server... For each manual check, record: what you did, what you observed, and whether it matched expectations. Each check becomes an interactiveChecks entry in the handoff.'"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker's skillFeedback.suggestedChanges notes that strict TDD (write tests first, see them fail) wasn't practical because changes were already in the working tree from a prior session. The skill's TDD requirement (Section 2: 'Write Vitest unit tests BEFORE implementation... Run tests — they MUST fail initially') doesn't account for resuming partially-implemented features.",
+      "evidence": "Handoff skillFeedback.suggestedChanges: 'The frontend-worker skill mentions TDD (write tests first, see them fail), but the changes were already partially implemented in the working tree. The procedure could note that in-progress changes should be reviewed and validated rather than requiring strict red-green-refactor when code already exists.'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "The templeos-boot feature passes review. All QEMU machine flags correctly match the native validation document, adapted for browser/Wasm execution. TempleOS is properly set as default boot mode with Linux PoC remaining selectable. Sparse disk image creation for persistence is correctly implemented using Emscripten's memfs. Two non-blocking issues noted: missing error handling around FS.truncate and the 2GB boundary worth monitoring. Two skill procedure observations: no manual browser verification performed, and TDD procedure doesn't account for resuming partial implementations."
+}

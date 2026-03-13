@@ -14,7 +14,7 @@ The asset packaging script (`scripts/package-assets.sh`) uses Emscripten's `file
 1. Rebuild QEMU with `-sLZ4=1` added to LDFLAGS in `build/Dockerfile`
 2. Re-run `package-assets.sh` without the `--lz4` flag (larger `.data` file, no compression)
 
-**Current status:** Needs verification at frontend integration time. The QEMU JS glue (`qemu-system-x86_64.js`) has zero LZ4 references, suggesting `-sLZ4` was not included in the build.
+**Current status (resolved):** The QEMU build does NOT include `-sLZ4=1`. The fix applied was option 2: `scripts/package-assets.sh` was updated to remove the `--lz4` flag, producing an uncompressed `.data` file. The `load.js` file has zero LZ4 references and loads assets successfully without decompression.
 
 ## EMSDK Version
 

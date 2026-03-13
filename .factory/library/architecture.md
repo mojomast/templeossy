@@ -46,7 +46,16 @@ Browser-hosted full-system emulator (NOT a hypervisor) running TempleOS via QEMU
 4. QEMU routes to PS/2 keyboard device model
 5. TempleOS reads PS/2 input
 
-Mouse: similar flow via _qemu_input_send_mouse(dx, dy, buttons)
+Mouse: similar flow via _qemu_input_send_mouse(dx, dy, dz, buttons) where dz is scroll wheel delta
+
+### QEMU Key Numbers vs PS/2 Scancodes
+The C backend function `_qemu_input_send_key(keynum, down)` expects QEMU "key numbers", NOT raw PS/2 Set 1 scancodes. For standard keys (a-z, 0-9, Enter, Escape, etc.), key numbers match PS/2 Set 1 scancodes (0x00-0x7F). For **extended keys** (those with E0 prefix in PS/2), the key number is the base scancode OR'd with 0x80:
+- Arrow keys: Up=0xC8, Down=0xD0, Left=0xCB, Right=0xCD
+- Navigation: Insert=0xD2, Delete=0xD3, Home=0xC7, End=0xCF, PageUp=0xC9, PageDown=0xD1
+- Right modifiers: RCtrl=0x9D, RAlt=0xB8
+- Numpad special: KP_Enter=0x9C, KP_Divide=0xB5
+
+Reference: QEMU source `ui/input-keymap.c`, `qcode_to_number` table.
 
 ### Persistence Pipeline
 1. QEMU writes to virtual disk via IDE device model

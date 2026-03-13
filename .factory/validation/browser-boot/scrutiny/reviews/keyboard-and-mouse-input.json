@@ -1,0 +1,67 @@
+{
+  "featureId": "keyboard-and-mouse-input",
+  "reviewedAt": "2026-03-13T03:30:00.000Z",
+  "commitId": "5ee7f19",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Well-structured implementation with solid architecture: focus gating, blur key release, mouse delta tracking, button state bitmask, and clean attach/detach lifecycle. 46 comprehensive tests. One significant data-level bug: extended PS/2 scancodes (arrow keys, navigation keys, right modifiers, numpad enter/divide) use base scancodes instead of QEMU key numbers with the 0x80 bit set for E0-prefixed keys. This means arrow keys will be interpreted as numpad keys by QEMU. The C backend calls qemu_input_event_send_key_number() which expects key numbers where extended (E0-prefix) scancodes are OR'd with 0x80. The fix is a localized data change (~15 map entries).",
+    "issues": [
+      {
+        "file": "src/input.ts",
+        "line": 104,
+        "severity": "non_blocking",
+        "description": "ArrowUp mapped to 0x48 but QEMU key number for UP arrow is 0xC8 (0x48 | 0x80). Value 0x48 maps to Q_KEY_CODE_KP_8 (numpad 8) in QEMU's number_to_qcode table. Same issue for ArrowDown (0x50 should be 0xD0), ArrowLeft (0x4B should be 0xCB), ArrowRight (0x4D should be 0xCD)."
+      },
+      {
+        "file": "src/input.ts",
+        "line": 97,
+        "severity": "non_blocking",
+        "description": "Navigation keys use base scancodes instead of extended key numbers. Insert (0x52 should be 0xD2), Delete (0x53 should be 0xD3), Home (0x47 should be 0xC7), End (0x4F should be 0xCF), PageUp (0x49 should be 0xC9), PageDown (0x51 should be 0xD1). Current values map to numpad keys (KP_0, KP_DECIMAL, KP_7, KP_1, KP_9, KP_3)."
+      },
+      {
+        "file": "src/input.ts",
+        "line": 93,
+        "severity": "non_blocking",
+        "description": "AltRight and ControlRight map to same key numbers as their left counterparts (0x38 and 0x1D). QEMU distinguishes them: ControlRight should be 0x9D, AltRight should be 0xB8. This means right-side modifiers will behave identically to left-side, which may or may not matter for TempleOS but is technically incorrect per QEMU's input model."
+      },
+      {
+        "file": "src/input.ts",
+        "line": 113,
+        "severity": "non_blocking",
+        "description": "NumpadDivide mapped to 0x35 (same as Slash). QEMU key number for KP_DIVIDE is 0xB5. NumpadEnter mapped to 0x1C (same as Enter). QEMU key number for KP_ENTER is 0x9C. These collisions make numpad keys indistinguishable from their main keyboard counterparts."
+      },
+      {
+        "file": "src/mouse.ts",
+        "line": 63,
+        "severity": "non_blocking",
+        "description": "MouseHandler constructor accepts _container parameter (prefixed with underscore) that is unused. While documented as reserved for future Pointer Lock API, this is a minor code smell. Acceptable for MVP given the documented intent."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The QEMU key number convention (extended E0-prefix scancodes must be OR'd with 0x80 for qemu_input_event_send_key_number) is not documented anywhere in AGENTS.md, the skill file, or .factory/library/. This caused the worker to use raw PS/2 Set 1 scancodes instead of QEMU key numbers for extended keys. A note like 'QEMU key numbers: standard keys use base scancodes (0x00-0x7F), extended keys (arrows, nav, right modifiers) use scancode | 0x80 (0x80-0xFF)' in AGENTS.md or architecture.md would prevent this.",
+      "evidence": "src/input.ts lines 97-115: ArrowUp=0x48, Home=0x47, etc. should be 0xC8, 0xC7 per QEMU qcode_to_number table (confirmed from QEMU source ui/input-keymap.c). The worker referenced the PS/2 Set 1 wiki page but not QEMU's key number encoding."
+    },
+    {
+      "area": "skills",
+      "observation": "The frontend-worker skill mentions 'Map KeyboardEvent.code to QEMU scancodes (PS/2 Set 1)' but this is misleading. The C backend's qemu_input_event_send_key_number takes QEMU 'key numbers' which encode the E0 prefix differently from raw PS/2 scancodes. The skill should clarify this distinction or point to a reference table.",
+      "evidence": "SKILL.md says 'Map KeyboardEvent.code to QEMU scancodes (PS/2 Set 1)' — worker followed this literally using PS/2 Set 1 scancodes. The correct approach is QEMU key numbers where extended keys have 0x80 OR'd."
+    },
+    {
+      "area": "conventions",
+      "observation": "The architecture.md and SKILL.md document _qemu_input_send_mouse(dx, dy, buttons) with 3 parameters, but the actual C backend has 4 parameters: _qemu_input_send_mouse(dx, dy, dz, buttons) where dz is scroll wheel delta. The worker correctly discovered the 4-param signature by reading the C source. Documentation should be updated to match.",
+      "evidence": ".factory/library/architecture.md: 'Mouse: similar flow via _qemu_input_send_mouse(dx, dy, buttons)' vs build/emscripten.c: 'void qemu_input_send_mouse(int dx, int dy, int dz, int buttons)'. SKILL.md also says 3 params."
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed procedure correctly (TDD, tests first, then implementation, verification). skillFeedback.followedProcedure=true. The skill's mention of 'Consider Pointer Lock API' was ambiguous about whether it should be implemented in this feature. Worker made a reasonable call to defer it, documenting the decision in the code.",
+      "evidence": "Handoff skillFeedback.suggestedChanges: 'The skill mentions Pointer Lock API for mouse input but doesn't specify whether it should be implemented in this feature or deferred.'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The keyboard-and-mouse-input implementation is architecturally sound with comprehensive test coverage (46 tests), proper focus gating, blur key release, mouse delta tracking, and clean main.ts integration. One notable data-level bug: extended PS/2 scancodes (arrow keys, navigation keys, right modifiers, numpad enter/divide) use raw PS/2 base scancodes instead of QEMU key numbers with the 0x80 bit for E0-prefix keys. This means ~15 keys (arrows, Home/End/Insert/Delete/PageUp/PageDown, RCtrl, RAlt, NumpadEnter, NumpadDivide) will map to wrong QEMU QKeyCodes (numpad keys instead of their intended functions). The fix is localized to updating numeric values in the SCANCODE_MAP. Core functionality (a-z, 0-9, Enter, Escape, Backspace, Tab, Space, F1-F12, left Shift/Ctrl/Alt, punctuation) and all mouse handling work correctly."
+}

@@ -1,0 +1,67 @@
+{
+  "featureId": "frontend-skeleton",
+  "reviewedAt": "2026-03-13T02:45:00.000Z",
+  "commitId": "13a4984",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The implementation comprehensively covers all 7 requirements from the feature description: Vite + TypeScript project with COOP/COEP headers, index.html with canvas/controls/debug panel/loading overlay, Emscripten module loader with phase tracking, loading progress UI, Vitest tests (49 total), LZ4 fix (repackaged assets without --lz4), and header verification. Code is well-structured with clean separation between emulator.ts (loader logic), loading.ts (UI state), main.ts (wiring), and style.css (dark theme). TypeScript strict mode clean, all tests pass. The LZ4 fix correctly identifies the root cause (QEMU built without -sLZ4=1) and applies the appropriate solution (remove --lz4 from file_packager). 11 files changed with 1263 insertions.",
+    "issues": [
+      {
+        "file": "src/emulator.ts",
+        "line": 99,
+        "severity": "non_blocking",
+        "description": "TypeError over-classification in classifyError(): the condition `errName === 'TypeError'` catches ALL TypeErrors as 'network' errors, not just fetch-related ones. A runtime TypeError like `TypeError: Cannot read properties of undefined` would be misclassified as a network error. Should add a more specific message check (e.g., /fetch|network|load/i.test(errMsg)) before the errName fallback, or move the errName check after SharedArrayBuffer."
+      },
+      {
+        "file": "src/emulator.ts",
+        "line": 224,
+        "severity": "non_blocking",
+        "description": "Misleading comment: `noInitialRun: false` is paired with comment '// Suppress auto-run so we control lifecycle', but `false` means auto-run IS allowed. If the intent is placeholder behavior (Start button wired in later feature), the comment should reflect that. If the intent is truly to suppress auto-run, the value should be `true`."
+      },
+      {
+        "file": "src/emulator.ts",
+        "line": 243,
+        "severity": "non_blocking",
+        "description": "Double SharedArrayBuffer check: EmulatorLoader.load() checks SAB at line 243, but main.ts also checks SAB at line ~59 before creating the loader. The redundant check in load() is defensive but unnecessary since main.ts already gates on it. Not a bug, just redundant code."
+      },
+      {
+        "file": "src/main.ts",
+        "line": 34,
+        "severity": "non_blocking",
+        "description": "Non-null assertions (`!`) on all DOM element lookups (e.g., `document.getElementById('loading-overlay')!`). If any element ID has a typo or HTML structure changes, this will produce null with no error message, causing confusing runtime failures. Consider adding a guard or assertion with a meaningful error message."
+      },
+      {
+        "file": "src/emulator.ts",
+        "line": 73,
+        "severity": "non_blocking",
+        "description": "Broad OOM classification: `/memory/i.test(errMsg)` would match any error mentioning 'memory' (e.g., 'Invalid memory address'), not just OOM. The RangeError instanceof check is sufficient for the primary OOM case; the message regex could be more specific (e.g., /out of memory|could not allocate/i)."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "knowledge",
+      "observation": "build-integration.md still says 'Needs verification at frontend integration time' for LZ4 status. The worker resolved this by removing --lz4 from package-assets.sh and repackaging assets. The library file should be updated to reflect current status: LZ4 is NOT used, assets are uncompressed, and load.js has zero LZ4 references.",
+      "evidence": "build-integration.md 'Current status' section vs. commit 13a4984 which removes --lz4 from scripts/package-assets.sh and repackages the data file"
+    },
+    {
+      "area": "conventions",
+      "observation": "Worker used non-null assertions (!) for DOM element lookups throughout main.ts without null checks. AGENTS.md says 'Always handle errors explicitly. Never swallow errors silently.' but doesn't specify a pattern for DOM element access. A convention for asserting DOM elements exist (e.g., a helper function that throws with a clear message) would prevent silent null propagation.",
+      "evidence": "src/main.ts lines 34-47: loadingElements uses `!` on all getElementById calls; AGENTS.md 'Error handling: Always handle errors explicitly'"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker could not perform browser-based manual verification (Step 5 of frontend-worker skill) because Playwright system dependencies (libnspr4, libnss3, etc.) are not pre-installed. apt-get install timed out. This is a recurring environment limitation that blocks interactive browser testing for all frontend features.",
+      "evidence": "Handoff skillFeedback.deviations[1]: 'agent-browser failed to launch due to missing libnspr4.so system library; apt-get install timed out'. Also documented in docs/ per earlier commit b36eddf."
+    },
+    {
+      "area": "knowledge",
+      "observation": "environment.md does not document that Playwright/Chromium system dependencies are missing from the environment, making agent-browser-based verification unreliable. The worker spent multiple tool calls trying to install deps before falling back to curl-only verification.",
+      "evidence": "Transcript skeleton shows 3-4 tool calls attempting 'npx playwright install-deps', 'apt-get install', all timing out. Worker's skillFeedback.suggestedChanges recommends adding this note."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The frontend-skeleton feature is well-implemented, covering all required functionality: Emscripten module loader with 6 initialization phases, error classification for 7 error types with user-friendly messages, loading UI with progress bar and smooth transitions, complete HTML structure with canvas/controls/debug panel, dark theme CSS with fullscreen support, and the critical LZ4 fix. 49 tests pass, TypeScript is clean, COOP/COEP headers verified. Five non-blocking issues identified: TypeError over-classification in error handling, misleading noInitialRun comment, redundant SAB check, non-null assertions without fallbacks, and broad OOM regex matching. None are blocking for the skeleton feature — they are refinements for later hardening."
+}
