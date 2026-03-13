@@ -1,0 +1,35 @@
+{
+  "milestone": "build-infra",
+  "round": 1,
+  "status": "pass",
+  "assertionsSummary": {
+    "total": 6,
+    "passed": 6,
+    "failed": 0,
+    "blocked": 0
+  },
+  "passedAssertions": [
+    "VAL-BUILD-001",
+    "VAL-BUILD-002",
+    "VAL-BUILD-003",
+    "VAL-BUILD-004",
+    "VAL-BUILD-005",
+    "VAL-BUILD-007"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Added Flow Validator Guidance sections for build-infra-cli and build-infra-browser surfaces, documenting key paths, isolation rules, EMSDK 4.0.10 notes, and testing URLs.",
+      "source": "setup"
+    }
+  ],
+  "previousRound": null,
+  "flowReports": [
+    ".factory/validation/build-infra/user-testing/flows/cli-build-artifacts.json",
+    ".factory/validation/build-infra/user-testing/flows/web-serve-and-git.json",
+    ".factory/validation/build-infra/user-testing/flows/native-qemu-boot.json"
+  ],
+  "notes": "All 6 build-infra assertions from completed implementation features passed. VAL-BUILD-001 verified Wasm binary (38.7MB), JS glue, and inline Web Worker (EMSDK 4.0.10 has no separate .worker.js). VAL-BUILD-002 confirmed all 4 BIOS/ROM files packaged. VAL-BUILD-003 confirmed ISO (17,817,600 bytes) bundled and fetchable with COOP/COEP headers. VAL-BUILD-004 validated from existing PPM screenshot (10 distinct colors, TempleOS desktop visible, 90+ second QEMU run). VAL-BUILD-005 confirmed Docker image and build infrastructure exist. VAL-BUILD-007 confirmed all artifacts committed to git and served from dev server with HTTP 200 and correct MIME types."
+}

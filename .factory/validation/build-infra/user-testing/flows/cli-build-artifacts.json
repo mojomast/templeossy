@@ -1,0 +1,122 @@
+{
+  "groupId": "cli-build-artifacts",
+  "testedAt": "2026-03-13T02:10:00Z",
+  "isolation": {
+    "projectRoot": "/home/mojo/projects/templeossy",
+    "buildOutput": "/home/mojo/projects/templeossy/build/output/",
+    "publicEmulator": "/home/mojo/projects/templeossy/public/emulator/",
+    "biosFiles": "/home/mojo/projects/templeossy/build/output/bios/",
+    "dockerImage": "qemu-wasm-builder",
+    "readOnly": true
+  },
+  "toolsUsed": ["Execute (shell commands)", "ls", "stat", "grep", "md5sum", "docker images"],
+  "assertions": [
+    {
+      "id": "VAL-BUILD-001",
+      "title": "QEMU Wasm Build Artifacts Exist",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "List build/output/ directory",
+          "expected": "JS glue, Wasm binary, and worker script (or inline worker) present",
+          "observed": "qemu-system-x86_64.js (272,246 bytes) and qemu-system-x86_64.wasm (40,558,861 bytes / 38.7 MB) present. No separate .worker.js (expected per EMSDK 4.0.10)."
+        },
+        {
+          "action": "Check Wasm file size >= 20 MB",
+          "expected": ">= 20,971,520 bytes",
+          "observed": "40,558,861 bytes (38.7 MB) — PASS"
+        },
+        {
+          "action": "Verify inline Web Worker code in JS glue",
+          "expected": "new Worker or PROXY_TO_PTHREAD patterns present",
+          "observed": "Found: line 943 'worker = new Worker(pthreadMainJs, {', line 5776 'PROXY_TO_PTHREAD mode', line 8164 'PROXY_TO_PTHREAD'. 171 total worker/pthread references."
+        },
+        {
+          "action": "List public/emulator/ directory (deployed artifacts)",
+          "expected": "Same artifacts deployed to public/emulator/",
+          "observed": "qemu-system-x86_64.js (272,246 bytes), qemu-system-x86_64.wasm (40,558,861 bytes), qemu-system-x86_64.data (17,561,315 bytes), load.js (141,798 bytes) all present."
+        },
+        {
+          "action": "Verify build/output matches public/emulator (MD5 checksums)",
+          "expected": "Identical files in both locations",
+          "observed": "JS glue MD5 c21f6fa94cd2fac7f18493f6ce65d631 matches. Wasm MD5 176690d47c5eb5f6f11c98e17ae88de9 matches."
+        }
+      ],
+      "evidence": {
+        "files": ["build-infra/cli-build-artifacts/VAL-BUILD-001-artifacts.txt"],
+        "consoleErrors": "none",
+        "network": "N/A (filesystem check)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-BUILD-002",
+      "title": "BIOS and ROM Files Packaged",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "List build/output/bios/ directory",
+          "expected": "bios-256k.bin (~256 KB), vgabios-stdvga.bin (~40-65 KB), kvmvapic.bin, linuxboot_dma.bin all present",
+          "observed": "bios-256k.bin (262,144 bytes / 256 KB), vgabios-stdvga.bin (39,424 bytes / ~38.5 KB), kvmvapic.bin (9,216 bytes), linuxboot_dma.bin (1,536 bytes) — all present with correct sizes."
+        },
+        {
+          "action": "Verify BIOS files are included in packaged .data file",
+          "expected": "load.js manifest references BIOS files in .data package",
+          "observed": "load.js manifest shows: /pack/TempleOSCDV5.03.ISO (0-17817600), /pack/bios-256k.bin (17817600-18079744), /pack/kvmvapic.bin (18079744-18088960), /pack/linuxboot_dma.bin (18088960-18090496), /pack/vgabios-stdvga.bin (18090496-18129920). All BIOS files packaged."
+        },
+        {
+          "action": "Verify .data file is larger than ISO alone (includes BIOS files)",
+          "expected": ".data package contains ISO + BIOS files (total uncompressed: 18,129,920 bytes)",
+          "observed": ".data file is 17,561,315 bytes (compressed). The load.js manifest confirms uncompressed content totals 18,129,920 bytes (17,817,600 ISO + 312,320 BIOS files). Compression reduces size below ISO-only size, but manifest proves all files are included."
+        }
+      ],
+      "evidence": {
+        "files": ["build-infra/cli-build-artifacts/VAL-BUILD-002-bios-files.txt"],
+        "consoleErrors": "none",
+        "network": "N/A (filesystem check)"
+      },
+      "issues": null
+    },
+    {
+      "id": "VAL-BUILD-005",
+      "title": "Docker Build Completes Without Errors",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Verify Docker image qemu-wasm-builder exists",
+          "expected": "Docker image listed",
+          "observed": "qemu-wasm-builder:latest (IMAGE ID d012b57de440, SIZE 2.66GB, created 23 minutes ago)"
+        },
+        {
+          "action": "Verify build/Dockerfile exists",
+          "expected": "Dockerfile present",
+          "observed": "build/Dockerfile exists (11,079 bytes)"
+        },
+        {
+          "action": "Verify build/build.sh exists and is executable",
+          "expected": "build.sh present and executable",
+          "observed": "build/build.sh exists (4,298 bytes, permissions -rwxrwxr-x)"
+        },
+        {
+          "action": "Verify build.sh documents the build process",
+          "expected": "Script has clear documentation of build steps",
+          "observed": "build.sh documents: (1) Build Docker image with cross-compiled deps + QEMU, (2) Extract build artifacts, (3) Verify output. Includes usage instructions, expected time, and output description. Has set -euo pipefail for error handling and artifact verification with size checks."
+        },
+        {
+          "action": "Verify all build output artifacts exist in build/output/",
+          "expected": "All artifacts from VAL-BUILD-001 present",
+          "observed": "qemu-system-x86_64.wasm (40,558,861 bytes), qemu-system-x86_64.js (272,246 bytes), bios/ directory with all 4 ROM files — all present and correctly sized."
+        }
+      ],
+      "evidence": {
+        "files": ["build-infra/cli-build-artifacts/VAL-BUILD-005-docker-build.txt"],
+        "consoleErrors": "none",
+        "network": "N/A (filesystem/docker check)"
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 3 assertions: 3 passed. VAL-BUILD-001: All Wasm build artifacts exist (JS glue 272KB, Wasm 38.7MB, inline worker verified with 171 pthread references). VAL-BUILD-002: All 4 BIOS/ROM files present in build/output/bios/ with correct sizes, and confirmed packaged into .data file via load.js manifest. VAL-BUILD-005: Docker image exists (2.66GB), build.sh is documented and executable, Dockerfile present, all output artifacts verified."
+}

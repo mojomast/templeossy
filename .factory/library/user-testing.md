@@ -49,3 +49,55 @@ Testing surface, validation approach, and resource cost classification.
 - 3 validators would need ~8600MB, exceeding 70% headroom
 
 **Rationale:** QEMU Wasm allocates 2300MB of Wasm linear memory per browser instance. This is the dominant cost. With only 4 CPU cores, concurrent QEMU instances would also compete for CPU time during the slow TCI emulation.
+
+## Flow Validator Guidance: build-infra-cli
+
+**Surface:** Command line / filesystem / Docker
+**Testing tool:** Shell commands (Execute tool) — no browser needed for CLI assertions.
+
+### What to test
+Build infrastructure assertions verified through filesystem inspection and Docker commands:
+- File existence and size checks (`ls -la`, `stat`)
+- Docker image availability (`docker images`)
+- Docker QEMU boot test (run QEMU in Docker, capture screendump)
+- Git tracking verification (`git ls-files`)
+
+### Isolation rules
+- Do NOT stop or modify any running Docker containers
+- Do NOT modify any build artifacts — read-only verification only
+- Docker QEMU test should use a unique container name to avoid conflicts
+- Port range 3200-3209 only; avoid all off-limits ports listed in AGENTS.md
+
+### Key paths
+- Build output: `/home/mojo/projects/templeossy/build/output/`
+- Public emulator: `/home/mojo/projects/templeossy/public/emulator/`
+- Assets: `/home/mojo/projects/templeossy/assets/`
+- BIOS files: `/home/mojo/projects/templeossy/build/output/bios/`
+- Docker test config: `/home/mojo/projects/templeossy/build/Dockerfile.qemu-test`
+- Boot test script: `/home/mojo/projects/templeossy/build/boot-test.sh`
+- Native validation docs: `/home/mojo/projects/templeossy/docs/native-qemu-validation.md`
+
+### EMSDK 4.0.10 note
+EMSDK 4.0.10 inlines Web Worker code in the main JS glue file. There is NO separate `.worker.js` file. VAL-BUILD-001 mentions "Web Worker script for pthreads" — this is satisfied by the inline worker in `qemu-system-x86_64.js`. Verify inline worker presence by grepping for `new Worker` or `PROXY_TO_PTHREAD` in the JS glue.
+
+## Flow Validator Guidance: build-infra-browser
+
+**Surface:** Web browser (dev server at http://localhost:3200)
+**Testing tool:** `curl` for HTTP header and response checks; `agent-browser` only if needed for deeper browser verification.
+
+### What to test
+- Artifacts served by dev server without 404 errors
+- TempleOS ISO fetchable without CORS errors
+- MIME types correct (`.wasm` → `application/wasm`)
+- All emulator files load with HTTP 200
+
+### Isolation rules
+- Dev server already running on port 3200
+- Do NOT restart the dev server
+- Read-only verification — do not modify served files
+
+### Key URLs
+- `http://localhost:3200/emulator/qemu-system-x86_64.wasm`
+- `http://localhost:3200/emulator/qemu-system-x86_64.js`
+- `http://localhost:3200/emulator/qemu-system-x86_64.data`
+- `http://localhost:3200/emulator/load.js`

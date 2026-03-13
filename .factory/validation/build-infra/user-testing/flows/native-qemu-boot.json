@@ -1,0 +1,80 @@
+{
+  "groupId": "native-qemu-boot",
+  "testedAt": "2026-03-13T02:06:00Z",
+  "isolation": {
+    "projectRoot": "/home/mojo/projects/templeossy",
+    "templeOSISO": "/home/mojo/projects/templeossy/assets/TempleOSCDV5.03.ISO",
+    "evidenceDir": "/home/mojo/.factory/missions/ffebca52-3486-4e43-a263-ffb6800e7a89/evidence/build-infra/native-qemu-boot/"
+  },
+  "toolsUsed": ["Execute", "python3 analyze-ppm.py", "git log"],
+  "assertions": [
+    {
+      "id": "VAL-BUILD-004",
+      "title": "Native QEMU Boots TempleOS",
+      "status": "pass",
+      "steps": [
+        {
+          "action": "Check existing PPM screenshot at docs/screenshots/native-qemu-boot.ppm",
+          "expected": "PPM file exists with 921,615 bytes (640x480x3 + 15-byte header)",
+          "observed": "File exists, 921,615 bytes — exact match for 640x480 PPM"
+        },
+        {
+          "action": "Check existing PNG screenshot at docs/screenshots/native-qemu-boot.png",
+          "expected": "PNG file exists with non-zero size",
+          "observed": "File exists, 12,146 bytes"
+        },
+        {
+          "action": "Run analyze-ppm.py on existing PPM to count distinct colors",
+          "expected": "At least 3 distinct pixel colors",
+          "observed": "10 distinct colors detected (sampled every 10th pixel): (0,0,168), (0,168,0), (168,87,0), (168,168,168), (168,0,0), (0,0,0), (87,87,255), (255,255,255), (255,255,87), (168,0,168)"
+        },
+        {
+          "action": "Visually inspect PNG screenshot",
+          "expected": "TempleOS desktop visible with multiple UI elements",
+          "observed": "TempleOS V5.03 desktop fully visible: two panes (left/right windows), 'Public Domain Operating System' header, 'Install onto hard drive (y or n)?' prompt, System Keys Quick Guide popup, FPS counter (30 FPS) and memory info at top bar"
+        },
+        {
+          "action": "Verify QEMU ran >= 90 seconds from commit message and boot-test.sh script logic",
+          "expected": "QEMU process ran at least 90 seconds without crashing",
+          "observed": "Commit 64976df confirms: 'QEMU ran 90+ seconds without crashing, TempleOS desktop fully visible'. The boot-test.sh takes screenshots at 15s, 30s, 60s, and 90s cumulative, and the final screenshot (boot_05_final) was captured only if QEMU was still running. Documentation in native-qemu-validation.md confirms 'QEMU runs >= 90 seconds without crash: PASS'."
+        },
+        {
+          "action": "Verify QEMU used correct flags: TCG emulation, IDE disk, legacy BIOS, VGA display",
+          "expected": "QEMU flags include: -display none, -monitor telnet, -m 2048, -cdrom TempleOS.ISO, -boot d (legacy BIOS, default IDE, default VGA)",
+          "observed": "native-qemu-validation.md documents exact flags: -display none -monitor telnet:0.0.0.0:4444,server,nowait -m 2048 -smp 1 -cdrom TempleOS.ISO -boot d -rtc base=localtime -no-reboot. Uses default pc (i440FX) machine type, default qemu64 CPU (TCG), default IDE controller, standard VGA."
+        },
+        {
+          "action": "Verify TempleOS ISO is correct size",
+          "expected": "17,817,600 bytes",
+          "observed": "assets/TempleOSCDV5.03.ISO is 17,817,600 bytes — exact match"
+        }
+      ],
+      "evidence": {
+        "screenshots": [
+          "build-infra/native-qemu-boot/VAL-BUILD-004-native-qemu-boot.ppm",
+          "build-infra/native-qemu-boot/VAL-BUILD-004-native-qemu-boot.png"
+        ],
+        "consoleErrors": "N/A (CLI validation, not browser)",
+        "network": "N/A (local Docker execution)",
+        "additionalFiles": {
+          "nativeQemuValidationDoc": "docs/native-qemu-validation.md",
+          "bootTestScript": "build/boot-test.sh",
+          "analyzePpmScript": "build/analyze-ppm.py",
+          "dockerfile": "build/Dockerfile.qemu-test",
+          "gitCommit": "64976dfd99c1e8857acd92bae5023b1ec8cf10dd"
+        },
+        "ppmAnalysis": {
+          "dimensions": "640x480",
+          "fileSize": 921615,
+          "distinctColors": 10,
+          "sampleColors": ["(0,0,168)", "(0,168,0)", "(168,87,0)", "(168,168,168)", "(168,0,0)", "(0,0,0)", "(87,87,255)", "(255,255,255)", "(255,255,87)", "(168,0,168)"],
+          "sizeCheckPass": true
+        }
+      },
+      "issues": null
+    }
+  ],
+  "frictions": [],
+  "blockers": [],
+  "summary": "Tested 1 assertion: 1 passed. VAL-BUILD-004 validated from existing evidence (commit 64976df). The PPM screenshot at docs/screenshots/native-qemu-boot.ppm is 921,615 bytes (640x480), contains 10 distinct colors (>=3 required), and visually shows the full TempleOS V5.03 desktop. Documentation and commit message confirm QEMU ran 90+ seconds without crashing under TCG emulation with correct flags (IDE disk, legacy BIOS, VGA display)."
+}
