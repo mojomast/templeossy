@@ -109,7 +109,7 @@ describe('isNonBlankFrame', () => {
     expect(isNonBlankFrame(pixels)).toBe(false);
   });
 
-  it('returns false for a frame with exactly 2 colors', () => {
+  it('returns true for a frame with exactly 2 colors', () => {
     const pixels = new Uint8ClampedArray(4 * 100);
     // 50 black pixels, 50 white pixels
     for (let i = 0; i < 50; i++) {
@@ -118,7 +118,7 @@ describe('isNonBlankFrame', () => {
     for (let i = 50; i < 100; i++) {
       pixels.set([255, 255, 255, 255], i * 4);
     }
-    expect(isNonBlankFrame(pixels)).toBe(false);
+    expect(isNonBlankFrame(pixels)).toBe(true);
   });
 
   it('returns true for a frame with more than 2 distinct colors', () => {
@@ -157,6 +157,7 @@ describe('DisplayRenderer', () => {
   let mockModule: QemuModule;
   let renderer: DisplayRenderer;
   let mockCtx: Record<string, unknown>;
+  const originalImageData = globalThis.ImageData;
 
   beforeEach(() => {
     // Create a canvas element and mock getContext since jsdom doesn't implement it
@@ -179,6 +180,8 @@ describe('DisplayRenderer', () => {
       _qemu_display_data: vi.fn().mockReturnValue(0),
       _qemu_display_width: vi.fn().mockReturnValue(0),
       _qemu_display_height: vi.fn().mockReturnValue(0),
+      _qemu_display_stride: vi.fn().mockReturnValue(0),
+      _qemu_display_frame_count: vi.fn().mockReturnValue(0),
       _qemu_display_check_dirty: vi.fn().mockReturnValue(0),
       _qemu_setup_display: vi.fn().mockReturnValue(1),
       HEAPU8: {
@@ -191,6 +194,11 @@ describe('DisplayRenderer', () => {
     if (renderer) {
       renderer.stop();
     }
+    globalThis.ImageData = originalImageData;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (globalThis as any).HEAPU8;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (globalThis as any).wasmMemory;
   });
 
   it('creates a DisplayRenderer instance', () => {
@@ -222,6 +230,41 @@ describe('DisplayRenderer', () => {
     vi.useRealTimers();
   });
 
+  it('retries display setup until QEMU console is ready', () => {
+    renderer = new DisplayRenderer(canvas, mockModule);
+    vi.useFakeTimers();
+
+    mockModule._qemu_setup_display = vi
+      .fn()
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(1);
+
+    renderer.start();
+    vi.advanceTimersByTime(33);
+
+    expect(mockModule._qemu_setup_display).toHaveBeenCalledTimes(2);
+
+    renderer.stop();
+    vi.useRealTimers();
+  });
+
+  it('emits diagnostic messages for setup and idle polling', () => {
+    renderer = new DisplayRenderer(canvas, mockModule);
+    vi.useFakeTimers();
+
+    const onDiagnostic = vi.fn();
+    renderer.onDiagnostic = onDiagnostic;
+
+    renderer.start();
+    vi.advanceTimersByTime(33 * 30);
+
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.stringContaining('setup result=1'));
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.stringContaining('idle frame_count=0 width=0 height=0'));
+
+    renderer.stop();
+    vi.useRealTimers();
+  });
+
   it('polls display dimensions and data during render loop', () => {
     renderer = new DisplayRenderer(canvas, mockModule);
     vi.useFakeTimers();
@@ -229,6 +272,7 @@ describe('DisplayRenderer', () => {
     // Set up valid framebuffer
     mockModule._qemu_display_width = vi.fn().mockReturnValue(640);
     mockModule._qemu_display_height = vi.fn().mockReturnValue(480);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(640 * 4);
     mockModule._qemu_display_data = vi.fn().mockReturnValue(100);
     mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(1);
 
@@ -255,6 +299,7 @@ describe('DisplayRenderer', () => {
     mockModule.HEAPU8 = { buffer: new ArrayBuffer(bufSize + 1000) };
     mockModule._qemu_display_width = vi.fn().mockReturnValue(newWidth);
     mockModule._qemu_display_height = vi.fn().mockReturnValue(newHeight);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(newWidth * 4);
     mockModule._qemu_display_data = vi.fn().mockReturnValue(100);
     mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(1);
 
@@ -268,33 +313,33 @@ describe('DisplayRenderer', () => {
     vi.useRealTimers();
   });
 
-  it('fires onFirstFrame callback when non-blank frame detected', () => {
+  it('fires onFirstFrame callback on the first valid framebuffer', () => {
     renderer = new DisplayRenderer(canvas, mockModule);
     vi.useFakeTimers();
 
     const onFirstFrame = vi.fn();
     renderer.onFirstFrame = onFirstFrame;
 
-    // Set up a non-blank framebuffer (>2 distinct colors)
+    // Set up a valid framebuffer
     const w = 10;
     const h = 10;
     const bufSize = w * h * 4 + 1000;
     const buffer = new ArrayBuffer(bufSize);
     const view = new Uint8Array(buffer);
-    // Write 3+ distinct BGRX colors at offset 100
+    // Fill with a single repeated color at offset 100
     const offset = 100;
     for (let i = 0; i < w * h; i++) {
-      const color = i % 4; // 4 distinct color patterns
       const base = offset + i * 4;
-      view[base] = color * 60;       // B
-      view[base + 1] = color * 80;   // G
-      view[base + 2] = color * 40;   // R
+      view[base] = 0x00;       // B
+      view[base + 1] = 0x00;   // G
+      view[base + 2] = 0xAA;   // R
       view[base + 3] = 0;            // X
     }
 
     mockModule.HEAPU8 = { buffer };
     mockModule._qemu_display_width = vi.fn().mockReturnValue(w);
     mockModule._qemu_display_height = vi.fn().mockReturnValue(h);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(w * 4);
     mockModule._qemu_display_data = vi.fn().mockReturnValue(offset);
     mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(1);
 
@@ -314,6 +359,7 @@ describe('DisplayRenderer', () => {
     mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(0);
     mockModule._qemu_display_width = vi.fn().mockReturnValue(640);
     mockModule._qemu_display_height = vi.fn().mockReturnValue(480);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(640 * 4);
 
     renderer.start();
     vi.advanceTimersByTime(33);
@@ -332,7 +378,8 @@ describe('DisplayRenderer', () => {
     mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(1);
     mockModule._qemu_display_width = vi.fn().mockReturnValue(640);
     mockModule._qemu_display_height = vi.fn().mockReturnValue(480);
-    mockModule._qemu_display_data = vi.fn().mockReturnValue(0);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(640 * 4);
+    mockModule._qemu_display_data = vi.fn().mockReturnValue(8);
 
     renderer.start();
     vi.advanceTimersByTime(33);
@@ -342,6 +389,136 @@ describe('DisplayRenderer', () => {
 
     renderer.stop();
     vi.useRealTimers();
+  });
+
+  it('reports render errors through diagnostics', () => {
+    renderer = new DisplayRenderer(canvas, mockModule);
+    vi.useFakeTimers();
+
+    const onDiagnostic = vi.fn();
+    renderer.onDiagnostic = onDiagnostic;
+    globalThis.ImageData = vi.fn(() => {
+      throw new Error('ImageData failed');
+    });
+
+    mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(1);
+    mockModule._qemu_display_width = vi.fn().mockReturnValue(2);
+    mockModule._qemu_display_height = vi.fn().mockReturnValue(2);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(8);
+    mockModule._qemu_display_data = vi.fn().mockReturnValue(8);
+    mockModule.HEAPU8 = { buffer: new ArrayBuffer(64) };
+
+    renderer.start();
+    vi.advanceTimersByTime(33);
+
+    expect(onDiagnostic).toHaveBeenCalledWith(expect.stringContaining('render error=ImageData failed'));
+
+    renderer.stop();
+    vi.useRealTimers();
+  });
+
+  it('falls back to wasmMemory when HEAPU8 is unavailable', () => {
+    renderer = new DisplayRenderer(canvas, mockModule);
+    vi.useFakeTimers();
+
+    const onFirstFrame = vi.fn();
+    renderer.onFirstFrame = onFirstFrame;
+
+    const width = 2;
+    const height = 2;
+    const stride = 8;
+    const fbPtr = 16;
+    const buffer = new ArrayBuffer(64);
+    const view = new Uint8Array(buffer);
+
+    for (let i = 0; i < width * height; i++) {
+      const base = fbPtr + i * 4;
+      view[base] = 0x00;
+      view[base + 1] = 0x00;
+      view[base + 2] = 0xAA;
+      view[base + 3] = 0x00;
+    }
+
+    mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(1);
+    mockModule._qemu_display_width = vi.fn().mockReturnValue(width);
+    mockModule._qemu_display_height = vi.fn().mockReturnValue(height);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(stride);
+    mockModule._qemu_display_data = vi.fn().mockReturnValue(fbPtr);
+    delete mockModule.HEAPU8;
+    mockModule.wasmMemory = { buffer };
+
+    renderer.start();
+    vi.advanceTimersByTime(33);
+
+    expect(onFirstFrame).toHaveBeenCalled();
+
+    renderer.stop();
+    vi.useRealTimers();
+  });
+
+  it('falls back to global HEAPU8 when module memory views are unavailable', () => {
+    renderer = new DisplayRenderer(canvas, mockModule);
+    vi.useFakeTimers();
+
+    const onFirstFrame = vi.fn();
+    renderer.onFirstFrame = onFirstFrame;
+
+    const width = 2;
+    const height = 2;
+    const stride = 8;
+    const fbPtr = 16;
+    const buffer = new ArrayBuffer(64);
+    const view = new Uint8Array(buffer);
+
+    for (let i = 0; i < width * height; i++) {
+      const base = fbPtr + i * 4;
+      view[base] = 0x00;
+      view[base + 1] = 0x00;
+      view[base + 2] = 0xAA;
+      view[base + 3] = 0x00;
+    }
+
+    mockModule._qemu_display_check_dirty = vi.fn().mockReturnValue(1);
+    mockModule._qemu_display_width = vi.fn().mockReturnValue(width);
+    mockModule._qemu_display_height = vi.fn().mockReturnValue(height);
+    mockModule._qemu_display_stride = vi.fn().mockReturnValue(stride);
+    mockModule._qemu_display_data = vi.fn().mockReturnValue(fbPtr);
+    delete mockModule.HEAPU8;
+    delete mockModule.wasmMemory;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).HEAPU8 = { buffer };
+
+    renderer.start();
+    vi.advanceTimersByTime(33);
+
+    expect(onFirstFrame).toHaveBeenCalled();
+
+    renderer.stop();
+    vi.useRealTimers();
+  });
+
+  it('converts framebuffer rows using stride instead of assuming tight packing', () => {
+    const width = 2;
+    const height = 2;
+    const stride = 12;
+
+    const bgrx = new Uint8ClampedArray([
+      0x10, 0x20, 0x30, 0x00,
+      0x40, 0x50, 0x60, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+      0x70, 0x80, 0x90, 0x00,
+      0xA0, 0xB0, 0xC0, 0x00,
+      0x00, 0x00, 0x00, 0x00,
+    ]);
+
+    const rgba = convertBGRXtoRGBA(bgrx, width, height, stride);
+
+    expect(Array.from(rgba)).toEqual([
+      0x30, 0x20, 0x10, 0xFF,
+      0x60, 0x50, 0x40, 0xFF,
+      0x90, 0x80, 0x70, 0xFF,
+      0xC0, 0xB0, 0xA0, 0xFF,
+    ]);
   });
 
   it('uses setInterval with ~30ms interval (not requestAnimationFrame)', () => {

@@ -1,0 +1,19 @@
+:3200 {
+    root * /var/www/templeossy/dist
+    encode zstd gzip
+    file_server
+
+    header {
+        Cross-Origin-Opener-Policy same-origin
+        Cross-Origin-Embedder-Policy require-corp
+        Cross-Origin-Resource-Policy same-origin
+    }
+
+    try_files {path} /index.html
+
+    @wasm path *.wasm
+    header @wasm Content-Type application/wasm
+
+    @data path *.data
+    header @data Content-Type application/octet-stream
+}

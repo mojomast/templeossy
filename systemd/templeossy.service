@@ -1,0 +1,13 @@
+[Unit]
+Description=Templeossy Vite Preview
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/templeossy
+ExecStart=/usr/bin/env npm run preview --prefix %h/projects/templeossy -- --port 3200
+Restart=on-failure
+User=%u
+
+[Install]
+WantedBy=multi-user.target

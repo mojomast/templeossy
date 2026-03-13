@@ -1,103 +1,172 @@
 # TempleOSsy
 
-A browser-hosted TempleOS emulator powered by QEMU compiled to WebAssembly. Boots TempleOS V5.03 directly in the browser with no plugins, downloads, or native software required.
+TempleOSsy is a browser-hosted QEMU-on-WebAssembly project for 64-bit x86 operating systems. It packages an `x86_64-softmmu` QEMU build, runs it in the browser with pthreads and `SharedArrayBuffer`, and renders the guest VGA framebuffer to an HTML canvas.
+
+The current app focuses on booting TempleOS V5.03, but the underlying QEMU build targets 64-bit guest systems rather than a TempleOS-only runtime.
+
+## What It Does
+
+- Runs a 64-bit QEMU system emulator (`qemu-system-x86_64`) compiled to WebAssembly
+- Boots bundled TempleOS media directly in the browser
+- Supports a second Linux proof-of-concept boot path for display/runtime testing
+- Renders VGA output through a custom QEMU display bridge in `build/emscripten.c`
+- Captures keyboard and mouse input in the browser and forwards it into QEMU
+- Persists the writable virtual disk with OPFS, with IndexedDB fallback
+
+## Current Status
+
+This project is experimental.
+
+- The QEMU build and frontend are wired up end-to-end in the browser
+- Cross-origin isolation is required because the emulator uses pthreads and `SharedArrayBuffer`
+- The Wasm QEMU runtime reserves about 2.3 GB of shared memory, so browser memory pressure still matters
+- TempleOS boot reliability and performance depend heavily on browser/runtime behavior
 
 ## Features
 
-- **Display rendering** -- QEMU VGA framebuffer rendered to an HTML canvas via a custom Emscripten display backend (BGRX to RGBA conversion at ~30 fps)
-- **Keyboard input** -- Full keyboard capture with TempleOS scancode translation, including special keys and Ctrl/Alt/Shift modifiers
-- **Mouse input** -- Absolute and relative mouse positioning with click and scroll support
-- **Controls UI** -- Start, pause, resume, reset, and power-off controls with visual state indicators
-- **Disk persistence** -- OPFS-backed virtual disk storage with IndexedDB fallback; survives page reloads
-- **Multi-tab safety** -- Web Locks API prevents concurrent emulator instances from corrupting shared disk state
-- **CD-only session protection** -- Detects sessions without a writable disk and skips persistence to avoid data loss
+- `x86_64` guest support via QEMU Wasm, not a simplified VM stub
+- Custom framebuffer export API: `_qemu_display_data`, `_qemu_display_width`, `_qemu_display_height`, `_qemu_display_stride`, `_qemu_display_check_dirty`
+- Canvas renderer with stride-aware BGRX-to-RGBA conversion
+- Keyboard and mouse forwarding into the guest
+- Start, Reboot, Wipe & Reset, and Fullscreen controls
+- Resume/fresh boot flow for existing saved TempleOS disk images
+- Multi-tab disk safety through the Web Locks API
+- Example Nginx and Caddy configs for COOP/COEP hosting
+
+## Requirements
+
+- A modern Chromium- or Firefox-class browser with `SharedArrayBuffer` support
+- HTTPS or `localhost`
+- Cross-origin isolation headers:
+  - `Cross-Origin-Opener-Policy: same-origin`
+  - `Cross-Origin-Embedder-Policy: require-corp`
+- Enough free memory for a large shared Wasm heap
 
 ## Quick Start
 
-```
+```bash
 npm install
 npm run dev
 ```
 
-Open http://localhost:3200 in a browser that supports SharedArrayBuffer (Chrome, Edge, or Firefox with appropriate headers). The TempleOS ISO is bundled in the repository -- no additional downloads needed.
+Then open `http://localhost:3200`.
 
-Cross-origin isolation headers (`Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy`) are configured automatically by the Vite dev server.
+The Vite dev server already sets the required COOP/COEP headers in `vite.config.ts`.
+
+## Production-Style Local Hosting
+
+If you want to serve the built app behind a normal web server instead of Vite:
+
+1. Run `npm run build`
+2. Serve `dist/` from a server that sends COOP/COEP headers
+3. Open the site over `https://` or `localhost`
+
+Example configs are included at:
+
+- `deploy/nginx.conf`
+- `deploy/Caddyfile`
+
+Quick header checks:
+
+```bash
+curl -I http://localhost:3200/
+curl -I http://localhost:3200/emulator/qemu-system-x86_64.wasm
+```
 
 ## Development Commands
 
-| Command            | Description                          |
-| ------------------ | ------------------------------------ |
-| `npm run dev`      | Start Vite dev server on port 3200   |
-| `npm run build`    | TypeScript check + Vite production build |
-| `npm run preview`  | Preview the production build         |
-| `npm run test`     | Run all 288 unit tests (Vitest)      |
-| `npm run typecheck`| Type-check without emitting          |
+| Command | Description |
+| --- | --- |
+| `npm run dev` | Start the Vite dev server on port 3200 |
+| `npm run build` | Type-check and build the frontend |
+| `npm run preview` | Preview the built frontend |
+| `npm run test` | Run the Vitest suite |
+| `npm run typecheck` | Run TypeScript without emitting output |
 
 ## Architecture
 
-```
-Browser
-  +-- Vite + vanilla TypeScript frontend
-  |     src/main.ts        -- entry point, wires modules together
-  |     src/display.ts     -- canvas rendering (polls QEMU framebuffer)
-  |     src/input.ts       -- keyboard input handling
-  |     src/mouse.ts       -- mouse input handling
-  |     src/controls.ts    -- emulator control buttons and state machine
-  |     src/loading.ts     -- boot progress UI
-  |     src/emulator.ts    -- QEMU lifecycle management
-  |     src/storage.ts     -- OPFS / IndexedDB disk persistence
-  |     src/tab-lock.ts    -- multi-tab mutual exclusion via Web Locks
-  |
-  +-- QEMU Wasm (x86_64-softmmu)
-  |     build/output/qemu-system-x86_64.wasm   -- ~25 MB Wasm binary
-  |     build/output/qemu-system-x86_64.js     -- Emscripten JS glue
-  |     build/output/bios/                     -- BIOS and VGA ROMs
-  |
-  +-- Custom Emscripten display backend
-        build/emscripten.c -- EMSCRIPTEN_KEEPALIVE functions that expose
-                              the VGA framebuffer pointer, dimensions,
-                              and accept keyboard/mouse input from JS
+```text
+Browser frontend
+  src/main.ts       app bootstrap and lifecycle wiring
+  src/emulator.ts   QEMU loader, runtime setup, boot arguments
+  src/display.ts    framebuffer polling and canvas rendering
+  src/input.ts      keyboard forwarding
+  src/mouse.ts      mouse forwarding
+  src/storage.ts    OPFS / IndexedDB virtual disk persistence
+
+QEMU Wasm build
+  build/Dockerfile  multi-stage Emscripten build pipeline
+  build/build.sh    rebuild helper
+  build/emscripten.c custom display/input bridge inside QEMU
+
+Served emulator assets
+  public/emulator/qemu-system-x86_64.js
+  public/emulator/qemu-system-x86_64.wasm
+  public/emulator/bios/
 ```
 
-The frontend polls exported C functions (`_qemu_display_data`, `_qemu_display_width`, etc.) each frame, copies the framebuffer into an `ImageData`, and draws it on a `<canvas>`. Input events flow in the reverse direction through `_qemu_input_send_key` and `_qemu_input_send_mouse_abs`.
+The display path is:
 
-Disk persistence writes the virtual hard drive image to the Origin Private File System (OPFS) after shutdown. On next boot, the stored image is loaded back, preserving any TempleOS files the user created.
+1. QEMU renders into its `DisplaySurface`
+2. `build/emscripten.c` exports framebuffer pointer, dimensions, stride, and dirty state
+3. `src/display.ts` polls those exports from the browser main thread
+4. The framebuffer is copied into `ImageData` and drawn on a `<canvas>`
 
-## Building QEMU Wasm from Source
+## Building QEMU Wasm From Source
 
-Pre-built artifacts are committed under `build/output/` so most developers do not need to rebuild QEMU. If you do need to rebuild:
+Most frontend work does not require a QEMU rebuild because generated artifacts are already checked in.
 
-```
+To rebuild the emulator toolchain output:
+
+```bash
 ./build/build.sh
 ```
 
-This requires Docker with BuildKit. The script:
+This requires Docker with BuildKit. The build pipeline:
 
-1. Builds a multi-stage Docker image that cross-compiles zlib, libffi, GLib, and Pixman with Emscripten SDK 4.0.10
-2. Clones the [ktock/qemu-wasm](https://github.com/ktock/qemu-wasm) fork and injects the custom display backend (`build/emscripten.c`)
-3. Configures and builds `qemu-system-x86_64` targeting wasm32
-4. Extracts `.wasm`, `.js`, and BIOS artifacts to `build/output/`
+1. Uses Emscripten SDK 4.0.10 in a multi-stage Docker build
+2. Builds QEMU dependencies for `wasm32`
+3. Patches in the custom Emscripten display bridge
+4. Builds `qemu-system-x86_64`
+5. Exports the generated `.js`, `.wasm`, and BIOS assets into `build/output/`
 
-Expect 20-40 minutes for a full build. Pass `--no-cache` to force a clean rebuild.
+Typical full rebuild time is on the order of tens of minutes.
+
+## Boot Modes
+
+- Default TempleOS mode boots the bundled `TempleOSCDV5.03.ISO`
+- A Linux proof-of-concept mode is available for bring-up and diagnostics
+- TempleOS sessions can resume from a saved writable disk image or start fresh from CD
+
+## Persistence
+
+- Saved disk images are stored in OPFS when available
+- IndexedDB is used as a fallback backend
+- The current initial writable disk size is 128 MB for browser practicality
+- Wipe & Reset deletes the saved disk image and starts over
 
 ## Project Structure
 
+```text
+assets/                bundled boot media
+build/                 QEMU Wasm build pipeline and custom C bridge
+deploy/                example Nginx and Caddy configs
+dist/                  built frontend output
+public/emulator/       served QEMU Wasm artifacts and BIOS files
+src/                   TypeScript app source and tests
+vite.config.ts         dev server config with COOP/COEP headers
 ```
-assets/              TempleOS V5.03 ISO (bundled)
-build/
-  Dockerfile         Multi-stage QEMU Wasm build
-  build.sh           Build orchestration script
-  emscripten.c       Custom QEMU display backend
-  output/            Pre-built Wasm artifacts and BIOS ROMs
-public/emulator/     Emulator assets served statically
-src/                 TypeScript source and tests
-vite.config.ts       Vite configuration (port 3200, COOP/COEP headers)
-```
+
+## Limitations
+
+- Requires cross-origin isolation; plain `file://` or headerless static hosting will not work
+- Browser memory limits can still prevent successful startup on some systems
+- Boot performance is much slower than native QEMU
+- The project currently targets browser experimentation, not production-grade VM hosting
 
 ## License
 
-TempleOS and the TempleOS V5.03 ISO are public domain, as declared by Terry A. Davis.
-
-QEMU is licensed under the GNU General Public License v2 (GPLv2). The custom Emscripten display backend (`build/emscripten.c`) is also GPLv2 to match.
-
-The frontend TypeScript code in `src/` is not yet under a formal license.
+- TempleOS and the TempleOS V5.03 ISO are public domain as declared by Terry A. Davis
+- QEMU is GPLv2
+- `build/emscripten.c` follows GPLv2 to match QEMU integration requirements
+- The frontend TypeScript code in `src/` does not yet declare a separate formal license

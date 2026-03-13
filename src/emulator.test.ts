@@ -3,6 +3,7 @@ import {
   classifyError,
   checkSharedArrayBuffer,
   EmulatorLoader,
+  TEMPLEOS_INITIAL_DISK_SIZE_BYTES,
   type EmulatorPhase,
   type EmulatorError,
   type ErrorType,
@@ -129,7 +130,7 @@ describe('EmulatorLoader', () => {
     expect(args).toContain('-vga');
     expect(args).toContain('std');
     expect(args).toContain('-display');
-    expect(args).toContain('emscripten');
+    expect(args).toContain('none');
     expect(args).toContain('-cdrom');
     expect(args).toContain('/pack/TempleOSCDV5.03.ISO');
     expect(args).toContain('-hda');
@@ -160,6 +161,23 @@ describe('EmulatorLoader', () => {
     const config = loader.buildModuleConfig();
     expect(typeof config.print).toBe('function');
     expect(typeof config.printErr).toBe('function');
+  });
+
+  it('buildModuleConfig provides a PTY bridge for QEMU runtime init', () => {
+    const loader = new EmulatorLoader();
+    const config = loader.buildModuleConfig();
+    const pty = config.pty as {
+      onSignal?: unknown;
+      onReadable?: unknown;
+      readable?: unknown;
+      writable?: unknown;
+    };
+
+    expect(pty).toBeDefined();
+    expect(typeof pty.onSignal).toBe('function');
+    expect(typeof pty.onReadable).toBe('function');
+    expect(typeof pty.readable).toBe('boolean');
+    expect(typeof pty.writable).toBe('boolean');
   });
 
   it('buildModuleConfig has setStatus callback', () => {
@@ -280,14 +298,18 @@ describe('EmulatorLoader', () => {
     expect(args[memIdx + 1]).toBe('512M');
   });
 
-  it('both modes use -vga std and -display emscripten', () => {
+  it('uses 128MB as the initial writable disk size', () => {
+    expect(TEMPLEOS_INITIAL_DISK_SIZE_BYTES).toBe(128 * 1024 * 1024);
+  });
+
+  it('both modes use -vga std and -display none', () => {
     for (const mode of ['templeos', 'linux-poc'] as const) {
       const loader = new EmulatorLoader(mode);
       const args = loader.getQemuArgs();
       expect(args).toContain('-vga');
       expect(args).toContain('std');
       expect(args).toContain('-display');
-      expect(args).toContain('emscripten');
+      expect(args).toContain('none');
     }
   });
 
@@ -344,6 +366,41 @@ describe('EmulatorLoader', () => {
     loader.diskImageData = data;
     // Setting diskImageData doesn't affect readDiskImage (which reads from Emscripten FS)
     // but does affect the preRun configuration in buildModuleConfig
+  });
+
+  it('waits for runtime initialization before becoming ready', async () => {
+    const loader = new EmulatorLoader('templeos');
+    const phases: EmulatorPhase[] = [];
+
+    loader.onPhaseChange = (phase: EmulatorPhase) => {
+      phases.push(phase);
+    };
+
+    let runtimeInit: (() => void) | undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (loader as any).loadScript = async (src: string) => {
+      if (src === '/emulator/qemu-system-x86_64.js') {
+        runtimeInit = () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ((globalThis as any).Module as Record<string, unknown>)._qemu_setup_display = () => 1;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          ((globalThis as any).Module as { onRuntimeInitialized?: () => void }).onRuntimeInitialized?.();
+        };
+      }
+    };
+
+    const loadPromise = loader.load();
+    await Promise.resolve();
+
+    expect(phases).toContain('compiling');
+    expect(phases).not.toContain('ready');
+
+    runtimeInit?.();
+    await Promise.resolve();
+    await loadPromise;
+
+    expect(phases[phases.length - 1]).toBe('ready');
+    expect(loader.module._qemu_setup_display()).toBe(1);
   });
 
   it('readDiskImage returns null when module is not loaded', () => {

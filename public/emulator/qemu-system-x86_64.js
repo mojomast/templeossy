@@ -6041,7 +6041,7 @@ var sigToWasmTypes = sig => {
 
 var Asyncify = {
   instrumentWasmImports(imports) {
-    var importPattern = /^(invoke_.*|__asyncjs__.*)$/;
+    var importPattern = /^(ffi_call_js|invoke_.*|__asyncjs__.*)$/;
     for (let [x, original] of Object.entries(imports)) {
       if (typeof original == "function") {
         let isAsyncifyImport = original.isAsync || importPattern.test(x);

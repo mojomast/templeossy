@@ -238,7 +238,7 @@ with open('util/memalign.c', 'r') as f:
     content = f.read()
 content = content.replace(
     '#else\n    #error No function to allocate aligned memory available',
-    '#elif defined(__EMSCRIPTEN__)\n    ptr = aligned_alloc(alignment, size);\n#else\n    #error No function to allocate aligned memory available'
+    '#elif defined(__EMSCRIPTEN__)\n    size_t aligned_size = size;\n    if (alignment && (aligned_size % alignment) != 0) {\n        aligned_size += alignment - (aligned_size % alignment);\n    }\n    ptr = aligned_alloc(alignment, aligned_size);\n#else\n    #error No function to allocate aligned memory available'
 )
 with open('util/memalign.c', 'w') as f:
     f.write(content)
@@ -261,7 +261,7 @@ PATCH_MESON
 # Matching container2wasm's approach exactly
 WORKDIR /qemu/build
 
-RUN EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -Wno-error=unused-but-set-variable -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=emmalloc ${XTERM_PTY_CFLAGS}" && \
+RUN EXTRA_CFLAGS="-O3 -g -Wno-error=unused-command-line-argument -Wno-error=unused-but-set-variable -matomics -mbulk-memory -DNDEBUG -DG_DISABLE_ASSERT -D_GNU_SOURCE -sASYNCIFY=1 -sASYNCIFY_IMPORTS=ffi_call_js -pthread -sPROXY_TO_PTHREAD=1 -sFORCE_FILESYSTEM -sALLOW_TABLE_GROWTH -sTOTAL_MEMORY=2300MB -sWASM_BIGINT -sMALLOC=emmalloc ${XTERM_PTY_CFLAGS}" && \
     emconfigure ../configure \
         --static \
         --target-list=x86_64-softmmu \

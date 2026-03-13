@@ -265,6 +265,9 @@ async function init(): Promise<void> {
 
     try {
       displayRenderer = new DisplayRenderer(canvas, loader.module);
+      displayRenderer.onDiagnostic = (message: string) => {
+        debugLog.log(`[display] ${message}`);
+      };
 
       // When first non-blank frame is detected, hide loading overlay
       displayRenderer.onFirstFrame = () => {

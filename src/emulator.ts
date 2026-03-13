@@ -1,3 +1,5 @@
+import { openpty } from 'xterm-pty';
+
 /**
  * emulator.ts — Emscripten QEMU module loader with initialization phase tracking
  * and comprehensive error handling.
@@ -40,6 +42,8 @@ export type ErrorType =
 
 export type PhaseChangeHandler = (phase: EmulatorPhase, error?: EmulatorError) => void;
 export type DownloadProgressHandler = (loaded: number, total: number) => void;
+
+export const TEMPLEOS_INITIAL_DISK_SIZE_BYTES = 128 * 1024 * 1024;
 
 /**
  * Classify an error into a specific ErrorType with user-friendly message and remediation.
@@ -235,7 +239,7 @@ export class EmulatorLoader {
         '-initrd', '/pack/initramfs.gz',
         '-append', 'console=ttyS0 console=tty0 earlyprintk=vga',
         '-vga', 'std',
-        '-display', 'emscripten',
+        '-display', 'none',
         '-rtc', 'base=localtime',
         '-accel', 'tcg,tb-size=500',
         '-nic', 'none',
@@ -256,7 +260,7 @@ export class EmulatorLoader {
       '-hda', '/pack/disk.img',
       '-boot', this._bootOrder,
       '-vga', 'std',
-      '-display', 'emscripten',
+      '-display', 'none',
       '-rtc', 'base=localtime',
       '-accel', 'tcg,tb-size=500',
       '-nic', 'none',
@@ -269,6 +273,8 @@ export class EmulatorLoader {
    * Build the Emscripten Module configuration object.
    */
   buildModuleConfig(): Record<string, unknown> {
+    const { slave } = openpty();
+
     const config: Record<string, unknown> = {
       // QEMU arguments
       arguments: this.getQemuArgs(),
@@ -294,6 +300,9 @@ export class EmulatorLoader {
       printErr: (text: string) => {
         console.warn('[QEMU]', text);
       },
+      // QEMU's Emscripten build expects a PTY object from xterm-pty even when
+      // we render VGA output instead of showing a terminal UI.
+      pty: slave,
     };
 
     // Initialize preRun array for filesystem setup
@@ -380,17 +389,31 @@ export class EmulatorLoader {
                 FS.writeFile('/pack/disk.img', diskData);
                 console.log(`[TempleOS] Restored disk image from storage (${diskData.length} bytes)`);
               } else {
-                // First visit or fresh: create a 2GB sparse disk image.
-                // Only allocated bytes consume memory.
-                const DISK_SIZE = 2 * 1024 * 1024 * 1024; // 2GB
-                FS.writeFile('/pack/disk.img', new Uint8Array(0));
-                FS.truncate('/pack/disk.img', DISK_SIZE);
-                console.log('[TempleOS] Created 2GB sparse writable disk at /pack/disk.img');
+                // First visit or fresh: create a smaller writable disk image so
+                // MEMFS does not attempt a multi-gigabyte allocation up front.
+                try {
+                  FS.writeFile('/pack/disk.img', new Uint8Array(0));
+                  FS.truncate('/pack/disk.img', TEMPLEOS_INITIAL_DISK_SIZE_BYTES);
+                  console.log('[TempleOS] Created 128MB writable disk at /pack/disk.img');
+                } catch (err) {
+                  const message = err instanceof Error ? err.message : String(err);
+                  console.error(`[TempleOS] Failed to initialize writable disk: ${message}`);
+                  throw new RangeError(`Failed to initialize writable disk image: ${message}`);
+                }
               }
             }
           },
         ];
       }
+
+      const runtimeReady = new Promise<void>((resolve) => {
+        moduleConfig.onRuntimeInitialized = () => {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          this._module = (globalThis as any).Module;
+          this.setPhase('ready');
+          resolve();
+        };
+      });
 
       // Set Module global for load.js
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -402,19 +425,13 @@ export class EmulatorLoader {
       // Phase 3: Compiling Wasm
       this.setPhase('compiling');
 
+      // Phase 4: Initializing runtime and exported bindings
+      this.setPhase('initializing');
+
       // Dynamically import the QEMU JS glue
       // The JS glue expects Module to be a global
       await this.loadScript('/emulator/qemu-system-x86_64.js');
-
-      // Phase 4: Initializing
-      this.setPhase('initializing');
-
-      // Store module reference for later use by other features (display, input)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this._module = (globalThis as any).Module;
-
-      // Phase 5: Ready
-      this.setPhase('ready');
+      await runtimeReady;
     } catch (err: unknown) {
       const emulatorError = classifyError(err);
       this.setPhase('error', emulatorError);
