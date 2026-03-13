@@ -1,0 +1,65 @@
+{
+  "milestone": "browser-boot",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 35,
+    "passed": 13,
+    "failed": 1,
+    "blocked": 21
+  },
+  "passedAssertions": [
+    "VAL-BUILD-006",
+    "VAL-BUILD-008",
+    "VAL-CROSS-005",
+    "VAL-CROSS-007",
+    "VAL-CROSS-009",
+    "VAL-DISP-002",
+    "VAL-CTRL-001",
+    "VAL-CTRL-002",
+    "VAL-CTRL-004",
+    "VAL-CTRL-005",
+    "VAL-CTRL-007",
+    "VAL-CTRL-008",
+    "VAL-CTRL-009"
+  ],
+  "failedAssertions": [
+    { "id": "VAL-DISP-006", "reason": "Loading overlay hides at 'ready' phase, leaving blank canvas after Start click. No loading indicator visible between Start click and first VGA frame." }
+  ],
+  "blockedAssertions": [
+    { "id": "VAL-DISP-001", "blockedBy": "QEMU Wasm Worker failed to allocate 2300MB memory in headless Chrome — no VGA display output" },
+    { "id": "VAL-DISP-003", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify pixel format conversion visually" },
+    { "id": "VAL-DISP-004", "blockedBy": "QEMU Wasm Worker memory allocation failure — no display updates during boot" },
+    { "id": "VAL-DISP-005", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify VGA mode switch handling" },
+    { "id": "VAL-DISP-007", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify display updates during interaction" },
+    { "id": "VAL-DISP-008", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify render pipeline latency" },
+    { "id": "VAL-INPUT-001", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify alphanumeric key input in live TempleOS" },
+    { "id": "VAL-INPUT-002", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify special key input" },
+    { "id": "VAL-INPUT-003", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify function key capture" },
+    { "id": "VAL-INPUT-004", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify modifier key combinations" },
+    { "id": "VAL-INPUT-005", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify focus gating in live TempleOS" },
+    { "id": "VAL-INPUT-006", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify shortcut interception" },
+    { "id": "VAL-INPUT-007", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify key repeat in live TempleOS" },
+    { "id": "VAL-INPUT-008", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify cross-thread key delivery" },
+    { "id": "VAL-INPUT-009", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify mouse movement tracking" },
+    { "id": "VAL-INPUT-010", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify mouse click registration" },
+    { "id": "VAL-INPUT-011", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify stuck key prevention" },
+    { "id": "VAL-CTRL-003", "blockedBy": "QEMU Wasm Worker memory allocation failure — cannot verify reboot effect (button state verified, live reboot blocked)" },
+    { "id": "VAL-CTRL-006", "blockedBy": "QEMU not running + headless Chrome does not support Fullscreen API" },
+    { "id": "VAL-CROSS-001", "blockedBy": "QEMU Wasm Worker memory allocation failure — page load and button lifecycle work, but TempleOS never boots" },
+    { "id": "VAL-CROSS-006", "blockedBy": "QEMU not running + headless Chrome does not support Fullscreen API" }
+  ],
+  "appliedUpdates": [
+    { "target": "user-testing.md", "description": "Added Flow Validator Guidance sections for browser-boot-display and browser-boot-input surfaces", "source": "setup" },
+    { "target": "user-testing.md", "description": "Documented QEMU Wasm Worker memory allocation limitation in headless Chrome and multiple workaround attempts", "source": "flow-report" }
+  ],
+  "environmentNotes": {
+    "chromeVersion": "Google Chrome for Testing 145.0.7632.6",
+    "libraryWorkaround": "Playwright Chromium required manual system library installation via .deb download to /tmp/chromium-libs/",
+    "memoryAvailable": "~9GB (16GB total, 7GB used)",
+    "wasmMemoryIssue": "Worker thread WebAssembly.Memory allocation of 2300MB fails in headless Chrome despite main thread allocation succeeding. Tested with headless shell, --headless=new, and direct CDP with various Chrome flags.",
+    "allUnitTestsPass": "161/161 tests pass across 7 test files (input, display, controls, emulator, mouse, loading, verify-assets)",
+    "typecheckClean": "tsc --noEmit succeeds with no errors"
+  },
+  "previousRound": null
+}

@@ -1,0 +1,209 @@
+{
+  "groupId": "input-interaction",
+  "testedAt": "2026-03-13T04:16:00Z",
+  "isolation": {
+    "appUrl": "http://localhost:3200",
+    "devServerPort": 3200,
+    "agentBrowserSession": "fd146de0e125",
+    "readOnly": true
+  },
+  "toolsUsed": ["agent-browser", "code-inspection", "vitest"],
+  "assertions": [
+    {
+      "id": "VAL-INPUT-001",
+      "title": "Alphanumeric keys work (a-z, 0-9 produce correct characters)",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: SCANCODE_MAP in input.ts", "expected": "All a-z and 0-9 keys mapped to correct PS/2 scancodes", "observed": "KeyA→0x1E, KeyB→0x30, ..., KeyZ→0x2C; Digit0→0x0B, Digit1→0x02, ..., Digit9→0x0A. All 36 alphanumeric codes present and correct per PS/2 Set 1." },
+        { "action": "Unit test: 'maps a-z keys to correct scancodes' and 'maps 0-9 keys to correct scancodes'", "expected": "Tests pass", "observed": "Both tests pass in Vitest (161/161 all pass)" },
+        { "action": "Live browser test: type characters after TempleOS boot", "expected": "Characters appear on screen", "observed": "BLOCKED: QEMU Wasm Worker failed to allocate 2300MB memory in headless Chrome, preventing TempleOS from booting. Canvas remained black." }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "Array buffer allocation failed (V8 internal)", "network": "n/a" },
+      "issues": "Code and unit tests verified correct. Live browser verification blocked by Wasm memory allocation failure in headless Chrome environment."
+    },
+    {
+      "id": "VAL-INPUT-002",
+      "title": "Special keys work (Enter, Escape, Backspace, Tab, arrows, etc.)",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: SCANCODE_MAP", "expected": "All special keys mapped correctly", "observed": "Enter→0x1C, Escape→0x01, Backspace→0x0E, Tab→0x0F, ArrowUp→0x48, ArrowDown→0x50, ArrowLeft→0x4B, ArrowRight→0x4D, Home→0x47, End→0x4F, Delete→0x53, Insert→0x52, PageUp→0x49, PageDown→0x51" },
+        { "action": "Unit test: 'maps special keys correctly'", "expected": "Tests pass", "observed": "All special key tests pass" },
+        { "action": "Live browser verification", "expected": "Special keys produce correct behavior in TempleOS", "observed": "BLOCKED: QEMU not running due to Wasm memory failure" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-003",
+      "title": "Function keys captured (F1-F12 with preventDefault)",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: SCANCODE_MAP + PREVENT_DEFAULT_KEYS", "expected": "F1-F12 mapped and preventDefault set", "observed": "F1→0x3B through F12→0x58. PREVENT_DEFAULT_KEYS includes F1-F12. KeyboardHandler calls e.preventDefault() for these keys." },
+        { "action": "Unit test: 'maps F1 through F12 to correct scancodes' and 'prevents default for F-keys'", "expected": "Tests pass", "observed": "Both tests pass" },
+        { "action": "Live browser verification", "expected": "F5 doesn't reload page", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-004",
+      "title": "Modifier keys work (Shift, Ctrl, Alt)",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: SCANCODE_MAP", "expected": "Modifier keys mapped with correct scancodes", "observed": "ShiftLeft→0x2A, ShiftRight→0x36, ControlLeft→0x1D, AltLeft→0x38, CapsLock→0x3A. Modifier make/break codes sent via keydown/keyup." },
+        { "action": "Unit test: modifier key scancodes", "expected": "Tests pass", "observed": "All modifier key tests pass" },
+        { "action": "Live browser verification", "expected": "Shift+a produces uppercase A", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-005",
+      "title": "Canvas focus gates input",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: KeyboardHandler.isFocused()", "expected": "Checks document.activeElement === container", "observed": "handleKeyDown/handleKeyUp both check isFocused() first, returning early if not focused." },
+        { "action": "Unit test: focus gating tests", "expected": "Tests pass", "observed": "'does NOT forward keys when container is not focused', 'forwards keys when container is focused', 'stops forwarding when focus moves' — all 3 pass" },
+        { "action": "Live browser verification", "expected": "Keys only sent when canvas focused", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-006",
+      "title": "Interceptable shortcuts captured (F5, F11, F12, Escape)",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: PREVENT_DEFAULT_KEYS set", "expected": "F5, F11, F12, Escape included", "observed": "PREVENT_DEFAULT_KEYS = new Set(['F1'...'F12', 'Escape', 'Tab', 'Space']). F5, F11, F12, and Escape all included. preventDefault() called in both handleKeyDown and handleKeyUp." },
+        { "action": "Unit test: 'prevents default for F-keys' and 'prevents default for Escape'", "expected": "Tests pass", "observed": "Both tests pass — e.preventDefault() called for F-keys and Escape when container focused" },
+        { "action": "Live browser verification", "expected": "F5 doesn't reload, F12 doesn't open devtools", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-007",
+      "title": "Key repeat works",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: KeyboardHandler.handleKeyDown", "expected": "Repeat events forwarded to QEMU", "observed": "handleKeyDown calls module._qemu_input_send_key(scancode, 1) for ALL keydown events including e.repeat=true. Only the heldKeys tracking skips repeats." },
+        { "action": "Unit test: 'forwards repeated keydown events'", "expected": "Test passes", "observed": "Test passes — repeated keydown events trigger _qemu_input_send_key" },
+        { "action": "Live browser verification", "expected": "Holding 'a' for 3 seconds produces multiple characters", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-008",
+      "title": "Keys reliably delivered cross-thread",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: key delivery mechanism", "expected": "Keys forwarded via Module._qemu_input_send_key which crosses main→Worker thread", "observed": "KeyboardHandler calls this.module._qemu_input_send_key(scancode, down) directly. The Emscripten glue handles thread marshalling via __emscripten_proxy_main." },
+        { "action": "Live browser verification", "expected": "50 keystrokes all received in order", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code verified. Cross-thread delivery depends on Emscripten runtime which couldn't be tested due to Wasm memory failure."
+    },
+    {
+      "id": "VAL-INPUT-009",
+      "title": "Mouse movement tracked",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: MouseHandler.handleMouseMove", "expected": "Sends relative deltas to QEMU", "observed": "Uses MouseEvent.movementX/Y for relative deltas, calls module._qemu_input_send_mouse(dx, dy, 0, buttonState)" },
+        { "action": "Unit test: mouse tests", "expected": "Tests pass", "observed": "All 12 mouse tests pass (movement, button tracking, contextmenu prevention, etc.)" },
+        { "action": "Live browser verification", "expected": "TempleOS cursor moves with mouse", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-010",
+      "title": "Mouse clicks register",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: MouseHandler.handleMouseDown/Up", "expected": "Button state tracked and sent to QEMU", "observed": "buttonBit() maps MouseEvent.button to QEMU bitmask (0=left→0x1, 1=middle→0x4, 2=right→0x2). State updated on mousedown/mouseup." },
+        { "action": "Unit test: mouse button tests", "expected": "Tests pass", "observed": "Mouse button tracking tests pass" },
+        { "action": "Live browser verification", "expected": "Left-click activates TempleOS UI elements", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-INPUT-011",
+      "title": "No stuck keys on focus loss",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: KeyboardHandler.handleBlur", "expected": "All held keys released on blur", "observed": "handleBlur() calls releaseAllKeys() which iterates heldKeys set and sends keyup (scancode, 0) for each. heldKeys.clear() called after." },
+        { "action": "Unit test: 'releases all currently held keys on blur' and 'does not send extra releases for already released keys'", "expected": "Tests pass", "observed": "Both tests pass — blur triggers release of all held keys" },
+        { "action": "Live browser verification", "expected": "Hold key, click outside, no runaway chars", "observed": "BLOCKED: QEMU not running" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and tests verified. Live verification blocked."
+    },
+    {
+      "id": "VAL-CTRL-003",
+      "title": "Reboot restarts emulator with confirmation",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: ControlsManager.handleRebootClick", "expected": "Confirmation dialog shown, then reboot callback called", "observed": "handleRebootClick checks state==='running', calls confirm('Reboot the emulator? Disk data will be preserved.'), calls onReboot callback if confirmed." },
+        { "action": "Unit test: reboot confirmation tests", "expected": "Tests pass", "observed": "'calls onReboot callback when confirmed' and 'does not call when cancelled' — both pass" },
+        { "action": "Browser test: Reboot button enabled while running", "expected": "Reboot enabled", "observed": "Confirmed via agent-browser: after clicking Start, Reboot button becomes enabled (not disabled)" },
+        { "action": "Live browser verification of actual reboot", "expected": "Boot sequence restarts after reboot", "observed": "BLOCKED: QEMU not producing display output" }
+      ],
+      "evidence": { "screenshots": ["browser-boot/after-start-click.png"], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code, tests, and button state verified. Live reboot effect blocked by QEMU not running."
+    },
+    {
+      "id": "VAL-CTRL-006",
+      "title": "Fullscreen toggle",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection: ControlsManager fullscreen handlers", "expected": "requestFullscreen on container, exitFullscreen on exit button, fullscreenchange event handler", "observed": "handleFullscreenClick calls displayContainer.requestFullscreen(). handleExitFullscreenClick calls document.exitFullscreen(). handleFullscreenChange toggles exit button visibility." },
+        { "action": "Unit test: fullscreen tests", "expected": "Tests pass", "observed": "'calls requestFullscreen on the display container' and 'calls exitFullscreen when already in fullscreen' — both pass" },
+        { "action": "Live browser verification", "expected": "Fullscreen fills screen with 4:3 ratio", "observed": "BLOCKED: Headless Chromium does not support Fullscreen API (requestFullscreen is a no-op in headless mode)" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Code and unit tests verified. Fullscreen cannot be tested in headless Chrome environment."
+    },
+    {
+      "id": "VAL-CROSS-001",
+      "title": "First-time visitor end-to-end",
+      "status": "blocked",
+      "steps": [
+        { "action": "Navigate to http://localhost:3200", "expected": "Page loads with loading indicator", "observed": "Page loaded. Loading overlay with spinner and progress shown. Phases: downloading→compiling→initializing→ready." },
+        { "action": "Click Start", "expected": "Emulator starts, TempleOS boots", "observed": "Start clicked, state transitioned to running. Start disabled, Reboot/Wipe enabled. Debug log shows lifecycle events." },
+        { "action": "Wait for VGA output", "expected": "TempleOS boot screen appears within 300s", "observed": "BLOCKED: Canvas remained black. QEMU Worker failed to allocate 2300MB Wasm memory. Display dimensions stayed 0x0." },
+        { "action": "Verify keyboard input", "expected": "Typed character echoed", "observed": "BLOCKED: No TempleOS running to receive input" }
+      ],
+      "evidence": { "screenshots": ["browser-boot/initial-load.png", "browser-boot/after-start-click.png", "browser-boot/debug-log-scrolled.png"], "consoleErrors": "Array buffer allocation failed", "network": "All assets loaded HTTP 200" },
+      "issues": "Page load, loading UI, and button lifecycle all work correctly. End-to-end flow blocked at QEMU execution due to Wasm memory allocation failure."
+    },
+    {
+      "id": "VAL-CROSS-006",
+      "title": "Fullscreen during active emulation",
+      "status": "blocked",
+      "steps": [
+        { "action": "Code inspection", "expected": "Fullscreen handlers work during running state", "observed": "handleFullscreenClick available in all states. Fullscreen button not disabled during running state." },
+        { "action": "Live browser verification", "expected": "Enter fullscreen → type → exit → emulator continues", "observed": "BLOCKED: QEMU not running; Fullscreen API unavailable in headless Chrome" }
+      ],
+      "evidence": { "screenshots": [], "consoleErrors": "n/a", "network": "n/a" },
+      "issues": "Blocked by both QEMU Wasm memory failure and headless Chrome Fullscreen API limitation."
+    }
+  ],
+  "frictions": [
+    {
+      "description": "Playwright Chromium headless shell required manual installation of system library dependencies (libnspr4, libnss3, etc.) via .deb download and extraction.",
+      "resolved": true,
+      "resolution": "Used pre-extracted libraries at /tmp/chromium-libs/usr/lib/x86_64-linux-gnu/ with LD_LIBRARY_PATH.",
+      "affectedAssertions": ["all"]
+    }
+  ],
+  "blockers": [
+    {
+      "description": "QEMU Wasm Worker thread consistently fails to allocate 2300MB WebAssembly linear memory in any Chrome headless mode (headless shell, --headless=new, direct CDP). V8 internal 'Array buffer allocation failed' error. Manual Wasm memory allocation succeeds in the main thread (new WebAssembly.Memory({initial: 37120, shared: true}) works), but the allocation fails in the Worker thread context. System has 9GB available RAM. Tried Chrome with --js-flags='--max-old-space-size=8192 --wasm-max-mem-pages=65536', --enable-features=WebAssembly,SharedArrayBuffer — all failed. This is likely a Chrome headless Worker memory limit that differs from the main thread limit.",
+      "affectedAssertions": ["VAL-INPUT-001", "VAL-INPUT-002", "VAL-INPUT-003", "VAL-INPUT-004", "VAL-INPUT-005", "VAL-INPUT-006", "VAL-INPUT-007", "VAL-INPUT-008", "VAL-INPUT-009", "VAL-INPUT-010", "VAL-INPUT-011", "VAL-CTRL-003", "VAL-CTRL-006", "VAL-CROSS-001", "VAL-CROSS-006", "VAL-DISP-001", "VAL-DISP-003", "VAL-DISP-004", "VAL-DISP-005", "VAL-DISP-007", "VAL-DISP-008"],
+      "quickFixAttempted": "Tried multiple Chrome launch configurations (headless shell, headless=new, direct CDP, various js-flags, feature flags). All fail identically. The issue is specific to Worker thread Wasm memory allocation in this environment."
+    }
+  ],
+  "summary": "Tested 15 input/interaction assertions plus VAL-CROSS-001. All code inspection and unit tests pass — scancode mappings correct, focus gating works, blur releases keys, mouse deltas tracked. Button state machine verified live in browser (Start→disabled, Reboot→enabled after Start click). All 15 live verification tests blocked by QEMU Wasm Worker memory allocation failure in headless Chrome."
+}
