@@ -197,4 +197,45 @@ describe('EmulatorLoader', () => {
     // but we test the handler is wired correctly through buildModuleConfig
     expect(loader.phase).toBe('idle');
   });
+
+  it('defaults to templeos boot mode', () => {
+    const loader = new EmulatorLoader();
+    expect(loader.bootMode).toBe('templeos');
+  });
+
+  it('supports linux-poc boot mode', () => {
+    const loader = new EmulatorLoader('linux-poc');
+    expect(loader.bootMode).toBe('linux-poc');
+  });
+
+  it('linux-poc mode uses -kernel and -initrd args', () => {
+    const loader = new EmulatorLoader('linux-poc');
+    const args = loader.getQemuArgs();
+    expect(args).toContain('-kernel');
+    expect(args).toContain('/pack/vmlinuz');
+    expect(args).toContain('-initrd');
+    expect(args).toContain('/pack/initramfs.gz');
+    expect(args).toContain('-append');
+    expect(args).not.toContain('-cdrom');
+    expect(args).not.toContain('-boot');
+  });
+
+  it('templeos mode uses -cdrom and -boot args', () => {
+    const loader = new EmulatorLoader('templeos');
+    const args = loader.getQemuArgs();
+    expect(args).toContain('-cdrom');
+    expect(args).toContain('/pack/TempleOSCDV5.03.ISO');
+    expect(args).toContain('-boot');
+    expect(args).toContain('d');
+    expect(args).not.toContain('-kernel');
+    expect(args).not.toContain('-initrd');
+  });
+
+  it('linux-poc uses 256M memory (smaller than templeos)', () => {
+    const loader = new EmulatorLoader('linux-poc');
+    const args = loader.getQemuArgs();
+    const memIdx = args.indexOf('-m');
+    expect(memIdx).toBeGreaterThanOrEqual(0);
+    expect(args[memIdx + 1]).toBe('256M');
+  });
 });

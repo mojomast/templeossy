@@ -78,6 +78,24 @@ describe('TempleOS ISO', () => {
   });
 });
 
+describe('Linux PoC Assets', () => {
+  const linuxPocDir = resolve(__dirname, '../public/linux-poc');
+
+  it('vmlinuz kernel exists and is >= 5MB', () => {
+    const file = resolve(linuxPocDir, 'vmlinuz');
+    expect(existsSync(file)).toBe(true);
+    const stats = statSync(file);
+    expect(stats.size).toBeGreaterThanOrEqual(5 * 1024 * 1024);
+  });
+
+  it('initramfs.gz exists and is >= 100KB', () => {
+    const file = resolve(linuxPocDir, 'initramfs.gz');
+    expect(existsSync(file)).toBe(true);
+    const stats = statSync(file);
+    expect(stats.size).toBeGreaterThanOrEqual(100 * 1024);
+  });
+});
+
 describe('Load.js Content', () => {
   it('references qemu-system-x86_64.data for remote fetch', async () => {
     const { readFileSync } = await import('fs');

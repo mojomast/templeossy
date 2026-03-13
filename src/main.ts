@@ -1,10 +1,12 @@
 /**
  * main.ts — Entry point for TempleOS Browser.
- * Wires together the emulator loader, loading UI, debug panel, and controls.
+ * Wires together the emulator loader, loading UI, display renderer, debug panel,
+ * and controls.
  */
 
-import { EmulatorLoader, checkSharedArrayBuffer } from './emulator';
+import { EmulatorLoader, checkSharedArrayBuffer, type BootMode } from './emulator';
 import { LoadingUI, type LoadingElements } from './loading';
+import { DisplayRenderer } from './display';
 
 /** Append a timestamped entry to the debug log. */
 function debugLog(message: string, level: 'info' | 'warn' | 'error' = 'info'): void {
@@ -25,8 +27,23 @@ function escapeHtml(text: string): string {
   return div.innerHTML;
 }
 
+/**
+ * Determine boot mode from URL query parameter.
+ * Default is 'linux-poc' for the current milestone.
+ * Use ?boot=templeos to boot TempleOS instead.
+ */
+function getBootMode(): BootMode {
+  const params = new URLSearchParams(window.location.search);
+  const mode = params.get('boot');
+  if (mode === 'templeos') return 'templeos';
+  // Default to linux-poc for the display verification milestone
+  return 'linux-poc';
+}
+
 /** Initialize the application. */
 function init(): void {
+  const bootMode = getBootMode();
+
   // Gather loading UI elements
   const loadingElements: LoadingElements = {
     overlay: document.getElementById('loading-overlay')!,
@@ -48,6 +65,11 @@ function init(): void {
   const btnDebugToggle = document.getElementById('btn-debug-toggle') as HTMLButtonElement;
   const btnDebugClear = document.getElementById('btn-debug-clear') as HTMLButtonElement;
   const debugPanel = document.getElementById('debug-panel')!;
+  const canvas = document.getElementById('display') as HTMLCanvasElement;
+  const loadingOverlay = document.getElementById('loading-overlay')!;
+
+  // Track display renderer
+  let displayRenderer: DisplayRenderer | null = null;
 
   // Debug panel toggle
   btnDebugToggle.addEventListener('click', () => {
@@ -69,8 +91,9 @@ function init(): void {
   }
   debugLog('SharedArrayBuffer available ✓');
 
-  // Create emulator loader
-  const loader = new EmulatorLoader();
+  // Create emulator loader with the selected boot mode
+  debugLog(`Boot mode: ${bootMode}`);
+  const loader = new EmulatorLoader(bootMode);
 
   // Wire phase changes to loading UI
   loader.onPhaseChange = (phase, error) => {
@@ -100,12 +123,41 @@ function init(): void {
     debugLog(`Unhandled error during load: ${err}`, 'error');
   });
 
-  // Start button — placeholder logic (actual boot in later feature)
+  // Start button — boots the emulator and starts display rendering
   btnStart.addEventListener('click', () => {
-    debugLog('Start clicked — emulator boot will be implemented in a later feature.');
+    if (!loader.module) {
+      debugLog('Module not ready yet', 'warn');
+      return;
+    }
+
+    debugLog('Starting emulator...');
     btnStart.disabled = true;
     btnReboot.disabled = false;
     btnWipe.disabled = false;
+
+    // Create and start the display renderer
+    try {
+      displayRenderer = new DisplayRenderer(canvas, loader.module);
+
+      // When first non-blank frame is detected, hide loading overlay
+      displayRenderer.onFirstFrame = () => {
+        debugLog('First VGA frame detected — display active');
+        loadingOverlay.classList.add('fade-out');
+        setTimeout(() => {
+          loadingOverlay.classList.add('hidden');
+        }, 500);
+      };
+
+      displayRenderer.start();
+      debugLog('Display render loop started (~30 FPS polling)');
+
+      // Focus the canvas for keyboard input
+      const container = document.getElementById('display-container');
+      container?.focus();
+
+    } catch (err: unknown) {
+      debugLog(`Failed to start display: ${err}`, 'error');
+    }
   });
 
   // Reboot button — placeholder
@@ -131,6 +183,13 @@ function init(): void {
       container.requestFullscreen().catch(() => {
         debugLog('Fullscreen not supported or denied', 'warn');
       });
+    }
+  });
+
+  // Log display renderer status on cleanup
+  window.addEventListener('beforeunload', () => {
+    if (displayRenderer) {
+      displayRenderer.stop();
     }
   });
 }

@@ -1,7 +1,14 @@
 /**
  * emulator.ts — Emscripten QEMU module loader with initialization phase tracking
  * and comprehensive error handling.
+ *
+ * Supports two boot modes:
+ * - 'templeos': Boot from TempleOS ISO CD-ROM (default)
+ * - 'linux-poc': Boot a minimal Linux kernel + initramfs for display pipeline verification
  */
+
+/** Boot mode for the emulator. */
+export type BootMode = 'templeos' | 'linux-poc';
 
 // Initialization phases
 export type EmulatorPhase =
@@ -153,6 +160,11 @@ export class EmulatorLoader {
   private _onDownloadProgress: DownloadProgressHandler | null = null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _module: any = null;
+  private _bootMode: BootMode;
+
+  constructor(bootMode: BootMode = 'templeos') {
+    this._bootMode = bootMode;
+  }
 
   get phase(): EmulatorPhase {
     return this._phase;
@@ -160,6 +172,10 @@ export class EmulatorLoader {
 
   get error(): EmulatorError | null {
     return this._error;
+  }
+
+  get bootMode(): BootMode {
+    return this._bootMode;
   }
 
   /** The loaded Emscripten Module object (available after 'ready' phase). */
@@ -185,23 +201,47 @@ export class EmulatorLoader {
   }
 
   /**
-   * Build the Emscripten Module configuration object.
+   * Get QEMU arguments for the current boot mode.
    */
-  buildModuleConfig(): Record<string, unknown> {
-    const config: Record<string, unknown> = {
-      // QEMU arguments
-      arguments: [
-        '-m', '512M',
+  getQemuArgs(): string[] {
+    if (this._bootMode === 'linux-poc') {
+      return [
+        '-m', '256M',
         '-smp', '1',
-        '-cdrom', '/pack/TempleOSCDV5.03.ISO',
-        '-boot', 'd',
+        '-kernel', '/pack/vmlinuz',
+        '-initrd', '/pack/initramfs.gz',
+        '-append', 'console=ttyS0 console=tty0 earlyprintk=vga',
         '-vga', 'std',
         '-display', 'emscripten',
         '-rtc', 'base=localtime',
         '-accel', 'tcg,tb-size=500',
         '-nic', 'none',
         '-L', '/pack',
-      ],
+      ];
+    }
+
+    // Default: TempleOS boot
+    return [
+      '-m', '512M',
+      '-smp', '1',
+      '-cdrom', '/pack/TempleOSCDV5.03.ISO',
+      '-boot', 'd',
+      '-vga', 'std',
+      '-display', 'emscripten',
+      '-rtc', 'base=localtime',
+      '-accel', 'tcg,tb-size=500',
+      '-nic', 'none',
+      '-L', '/pack',
+    ];
+  }
+
+  /**
+   * Build the Emscripten Module configuration object.
+   */
+  buildModuleConfig(): Record<string, unknown> {
+    const config: Record<string, unknown> = {
+      // QEMU arguments
+      arguments: this.getQemuArgs(),
       // Locate files in /emulator/ subdirectory
       locateFile: (path: string) => `/emulator/${path}`,
       // Main script URL for Web Worker
@@ -226,7 +266,27 @@ export class EmulatorLoader {
       },
     };
 
+    // For Linux PoC: inject kernel + initramfs into Emscripten FS via preRun
+    if (this._bootMode === 'linux-poc') {
+      config.preRun = [
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        ...(config.preRun as Array<() => void> || []),
+      ];
+    }
+
     return config;
+  }
+
+  /**
+   * Fetch a binary file and return it as a Uint8Array.
+   */
+  private async fetchBinary(url: string): Promise<Uint8Array> {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch ${url}: ${response.status} ${response.statusText}`);
+    }
+    const buffer = await response.arrayBuffer();
+    return new Uint8Array(buffer);
   }
 
   /**
@@ -244,9 +304,39 @@ export class EmulatorLoader {
       // Phase 2: Download
       this.setPhase('downloading');
 
+      // For Linux PoC, fetch kernel + initramfs before starting
+      let linuxKernel: Uint8Array | null = null;
+      let linuxInitramfs: Uint8Array | null = null;
+
+      if (this._bootMode === 'linux-poc') {
+        [linuxKernel, linuxInitramfs] = await Promise.all([
+          this.fetchBinary('/linux-poc/vmlinuz'),
+          this.fetchBinary('/linux-poc/initramfs.gz'),
+        ]);
+      }
+
       // Load the data file packager (load.js) first — it sets up preRun hooks
       // The load.js script expects a global Module object
       const moduleConfig = this.buildModuleConfig();
+
+      // For Linux PoC: add a preRun callback to inject kernel+initramfs into the FS
+      if (this._bootMode === 'linux-poc' && linuxKernel && linuxInitramfs) {
+        const existingPreRun = (moduleConfig.preRun as Array<() => void>) || [];
+        moduleConfig.preRun = [
+          ...existingPreRun,
+          function () {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const FS = (globalThis as any).Module.FS;
+            if (FS) {
+              // Ensure /pack directory exists (created by load.js data packager)
+              try { FS.mkdir('/pack'); } catch { /* already exists */ }
+              FS.writeFile('/pack/vmlinuz', linuxKernel);
+              FS.writeFile('/pack/initramfs.gz', linuxInitramfs);
+              console.log('[Linux PoC] Injected kernel and initramfs into /pack/');
+            }
+          },
+        ];
+      }
 
       // Set Module global for load.js
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
