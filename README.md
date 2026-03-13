@@ -157,6 +157,16 @@ src/                   TypeScript app source and tests
 vite.config.ts         dev server config with COOP/COEP headers
 ```
 
+## Troubleshooting
+
+**Keyboard not responding:** Click directly on the display canvas to focus it. The keyboard handler only forwards events when the display container has focus. After clicking Start, click the canvas area once more to ensure focus is set.
+
+**Slow boot:** TempleOS takes 1-2 minutes to boot under QEMU Wasm TCI emulation. The display may appear frozen during this time. Wait for frames to start updating (visible in the Debug Log).
+
+**TempleOS first-boot prompts:** On first boot from CD, TempleOS shows a white dialog box asking setup questions (install to hard drive, screen resolution, etc.). Answer with Y/N keys followed by Enter. This is normal TempleOS behavior.
+
+**Out of memory:** The emulator requires ~2.3 GB of WebAssembly memory. Close other tabs and applications if the browser fails to allocate memory.
+
 ## Limitations
 
 - Requires cross-origin isolation; plain `file://` or headerless static hosting will not work
