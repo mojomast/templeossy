@@ -349,28 +349,37 @@ async function init(): Promise<void> {
   /**
    * Wipe & Reset: clear disk storage, recreate empty disk, restart fresh.
    * After wipe, next visit is like first visit (no resume choice).
+   *
+   * Properly awaits auto-save stop before deleting disk to prevent
+   * a race condition where the final flush could re-write the disk
+   * after deletion.
    */
   function wipeAndReset(): void {
     debugLog.log('Wipe & Reset — clearing storage and restarting...');
 
-    // Stop auto-save first to prevent race with delete
-    if (autoSaveManager) {
-      void autoSaveManager.stop();
-      autoSaveManager = null;
-    }
+    // Stop auto-save first to prevent race with delete.
+    // We must await the stop (which includes a final flush) before deleting,
+    // otherwise the final flush could re-write the disk image after we delete it.
+    const stopPromise = autoSaveManager
+      ? autoSaveManager.stop()
+      : Promise.resolve();
+    autoSaveManager = null;
 
-    diskStorage.deleteDisk().then(() => {
-      debugLog.log('Disk image deleted from storage');
-      // Release tab lock before reload so the new tab can acquire it
-      tabLock.release();
-      // Reload page for a fresh start (boots from CD, no resume choice)
-      window.location.reload();
-    }).catch((err) => {
-      debugLog.log(`Failed to delete disk: ${err}`, 'error');
-      tabLock.release();
-      // Reload anyway
-      window.location.reload();
-    });
+    stopPromise
+      .then(() => diskStorage.deleteDisk())
+      .then(() => {
+        debugLog.log('Disk image deleted from storage');
+        // Release tab lock before reload so the new tab can acquire it
+        tabLock.release();
+        // Reload page for a fresh start (boots from CD, no resume choice)
+        window.location.reload();
+      })
+      .catch((err) => {
+        debugLog.log(`Failed to wipe storage: ${err}`, 'error');
+        tabLock.release();
+        // Reload anyway
+        window.location.reload();
+      });
   }
 
   // Create controls manager with callbacks
