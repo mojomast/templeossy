@@ -181,6 +181,12 @@ export class KeyboardHandler {
   private boundKeyUp: ((e: KeyboardEvent) => void) | null = null;
   private boundBlur: (() => void) | null = null;
 
+  /** Callback fired for keyboard diagnostics in the debug log. */
+  onDiagnostic: ((message: string) => void) | null = null;
+
+  /** Tracks last blocked-focus diagnostic to avoid log spam. */
+  private lastBlockedFocusDiag = '';
+
   constructor(container: HTMLElement, module: InputModule) {
     this.container = container;
     this.module = module;
@@ -225,10 +231,21 @@ export class KeyboardHandler {
   /** Handle keydown events. */
   private handleKeyDown(e: KeyboardEvent): void {
     // Only forward when this container is the active element
-    if (!this.isFocused()) return;
+    if (!this.isFocused()) {
+      const activeTag = document.activeElement?.tagName ?? 'null';
+      const diagKey = `${e.code}:${activeTag}`;
+      if (diagKey !== this.lastBlockedFocusDiag) {
+        this.lastBlockedFocusDiag = diagKey;
+        this.onDiagnostic?.(`blocked code=${e.code} reason=not-focused activeElement=${activeTag}`);
+      }
+      return;
+    }
 
     const scancode = SCANCODE_MAP[e.code];
-    if (scancode === undefined) return;
+    if (scancode === undefined) {
+      this.onDiagnostic?.(`ignored code=${e.code} reason=unmapped`);
+      return;
+    }
 
     // Prevent browser defaults for interceptable keys
     if (PREVENT_DEFAULT_KEYS.has(e.code)) {
@@ -242,6 +259,9 @@ export class KeyboardHandler {
 
     // Forward to QEMU — including key repeat events
     this.module._qemu_input_send_key(scancode, 1);
+    if (!e.repeat) {
+      this.onDiagnostic?.(`keydown code=${e.code} scancode=0x${scancode.toString(16)}`);
+    }
   }
 
   /** Handle keyup events. */
@@ -262,10 +282,15 @@ export class KeyboardHandler {
 
     // Forward to QEMU
     this.module._qemu_input_send_key(scancode, 0);
+    this.onDiagnostic?.(`keyup code=${e.code} scancode=0x${scancode.toString(16)}`);
   }
 
   /** Handle blur events — release all held keys to prevent stuck keys. */
   private handleBlur(): void {
+    const count = this.heldKeys.size;
+    if (count > 0) {
+      this.onDiagnostic?.(`blur released=${count} keys`);
+    }
     this.releaseAllKeys();
   }
 

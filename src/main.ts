@@ -280,6 +280,9 @@ async function init(): Promise<void> {
 
       // Set up keyboard input handler on the display container
       keyboardHandler = new KeyboardHandler(displayContainer, loader.module);
+      keyboardHandler.onDiagnostic = (message: string) => {
+        debugLog.log(`[keyboard] ${message}`);
+      };
       keyboardHandler.attach();
       debugLog.log('Keyboard input handler attached');
 

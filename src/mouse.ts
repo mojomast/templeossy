@@ -46,6 +46,7 @@ function buttonBit(button: number): number {
  */
 export class MouseHandler {
   private canvas: HTMLCanvasElement;
+  private container: HTMLElement;
   private module: MouseModule;
 
   /** Current button state bitmask (bit 0=left, bit 1=right, bit 2=middle). */
@@ -57,9 +58,9 @@ export class MouseHandler {
   private boundMouseUp: ((e: MouseEvent) => void) | null = null;
   private boundContextMenu: ((e: MouseEvent) => void) | null = null;
 
-  constructor(canvas: HTMLCanvasElement, _container: HTMLElement, module: MouseModule) {
+  constructor(canvas: HTMLCanvasElement, container: HTMLElement, module: MouseModule) {
     this.canvas = canvas;
-    // _container reserved for future Pointer Lock API integration
+    this.container = container;
     this.module = module;
   }
 
@@ -113,6 +114,11 @@ export class MouseHandler {
 
   /** Handle mousedown — update button state and send to QEMU. */
   private handleMouseDown(e: MouseEvent): void {
+    // Ensure the display container has focus for keyboard input.
+    // Clicking the canvas (a non-focusable child) does not automatically
+    // focus the parent container in all browsers, so we do it explicitly.
+    this.container.focus();
+
     const bit = buttonBit(e.button);
     this.buttonState |= bit;
     this.module._qemu_input_send_mouse(0, 0, 0, this.buttonState);

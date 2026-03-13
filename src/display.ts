@@ -29,7 +29,10 @@ function getGlobalMemoryBuffer(): ArrayBufferLike | null {
     HEAPU8?: { buffer: ArrayBufferLike };
     wasmMemory?: { buffer: ArrayBufferLike };
   };
-  return root.HEAPU8?.buffer ?? root.wasmMemory?.buffer ?? null;
+  // Prefer wasmMemory.buffer: WebAssembly.Memory.buffer always reflects the
+  // current backing store after memory.grow(), whereas HEAPU8 is a typed-array
+  // view that may reference a stale (detached) ArrayBuffer.
+  return root.wasmMemory?.buffer ?? root.HEAPU8?.buffer ?? null;
 }
 
 /** Render loop interval in milliseconds (~30 FPS). */
@@ -213,10 +216,14 @@ export class DisplayRenderer {
         this.currentHeight = height;
       }
 
-      // Read framebuffer from Wasm linear memory
+      // Read framebuffer from Wasm linear memory.
+      // Prefer wasmMemory.buffer: WebAssembly.Memory.buffer always returns the
+      // current backing store even after memory.grow(), whereas HEAPU8 is a
+      // typed-array view that can reference a stale (detached) buffer after
+      // Wasm memory growth — leading to OOB reads or crashes.
       const byteLength = stride * height;
-      const memoryBuffer = this.module.HEAPU8?.buffer
-        ?? this.module.wasmMemory?.buffer
+      const memoryBuffer = this.module.wasmMemory?.buffer
+        ?? this.module.HEAPU8?.buffer
         ?? getGlobalMemoryBuffer();
 
       if (!memoryBuffer) {
