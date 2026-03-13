@@ -92,6 +92,12 @@ export type StorageErrorHandler = (error: {
   message: string;
 }) => void;
 
+/**
+ * Callback type for flush diagnostic messages.
+ * Used by AutoSaveManager to report flush lifecycle events for debugging.
+ */
+export type FlushDiagnosticHandler = (message: string) => void;
+
 // ─── OPFS Backend ──────────────────────────────────────────────────────────
 
 /**
@@ -410,6 +416,7 @@ export class AutoSaveManager {
   private _isRunning = false;
   private boundBeforeUnload: (() => void) | null = null;
   private _onStorageError: StorageErrorHandler | null = null;
+  private _onFlush: FlushDiagnosticHandler | null = null;
   private _quotaErrorReported = false;
 
   constructor(storage: DiskStorage, readDiskData: DiskDataReader) {
@@ -425,6 +432,14 @@ export class AutoSaveManager {
     this._onStorageError = handler;
   }
 
+  /**
+   * Set a callback to receive flush diagnostic messages.
+   * Reports flush start, completion, and failure for debugging.
+   */
+  set onFlush(handler: FlushDiagnosticHandler | null) {
+    this._onFlush = handler;
+  }
+
   get isRunning(): boolean {
     return this._isRunning;
   }
@@ -437,9 +452,16 @@ export class AutoSaveManager {
 
     this._isRunning = true;
 
-    // Periodic save
+    // Periodic save — wrapped in try-catch to prevent unhandled exceptions
+    // from killing the interval timer (e.g. readDiskData throwing during
+    // concurrent QEMU disk writes)
     this.intervalId = setInterval(() => {
-      void this.flush();
+      try {
+        void this.flush();
+      } catch (err) {
+        console.warn('[AutoSave] Unhandled error in periodic flush:', err);
+        this._onFlush?.(`flush exception: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }, AUTO_SAVE_INTERVAL_MS);
 
     // Save on tab close
@@ -476,13 +498,18 @@ export class AutoSaveManager {
    * Detects quota errors and reports them via onStorageError callback.
    */
   async flush(): Promise<void> {
+    this._onFlush?.('flush started');
     try {
       const data = this.readDiskData();
       if (data && data.length > 0) {
         await this.storage.saveDisk(data);
+        this._onFlush?.(`flush complete (${data.length} bytes)`);
+      } else {
+        this._onFlush?.('flush skipped (no data)');
       }
     } catch (err) {
       console.warn('[AutoSave] Failed to save disk:', err);
+      this._onFlush?.(`flush failed: ${err instanceof Error ? err.message : String(err)}`);
 
       if (isQuotaError(err)) {
         // Only report quota error once to avoid spamming the user
@@ -509,6 +536,7 @@ export class AutoSaveManager {
    */
   private flushSync(): void {
     try {
+      this._onFlush?.('beforeunload flush started');
       const data = this.readDiskData();
       if (data && data.length > 0) {
         // Fire and forget — browser gives us limited time in beforeunload

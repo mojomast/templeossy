@@ -185,10 +185,12 @@ async function init(): Promise<void> {
 
   let bootMedium: BootMedium = 'cd';
   let savedDiskData: Uint8Array | null = null;
+  let hasSavedDisk = false;
 
   if (bootMode === 'templeos') {
     try {
       const hasSaved = await diskStorage.hasSavedDisk();
+      hasSavedDisk = hasSaved;
       debugLog.log(`Saved disk found: ${hasSaved}`);
 
       if (hasSaved) {
@@ -299,8 +301,8 @@ async function init(): Promise<void> {
       // - Booting from disk (resume) — user explicitly resumed, save their changes
       // - First visit (no saved disk) — save the new disk after install
       const shouldAutoSave = bootMode === 'templeos' && (
-        bootMedium === 'disk' ||  // Resume: save changes
-        !savedDiskData             // First visit: save new disk after install
+        bootMedium === 'disk' ||                    // Resume: save changes
+        (bootMedium === 'cd' && !hasSavedDisk)      // First visit only: save new disk after install
       );
 
       if (shouldAutoSave && loader) {
@@ -315,9 +317,12 @@ async function init(): Promise<void> {
             ? 'Storage full — cannot save disk image. Your changes may be lost.'
             : error.message);
         };
+        autoSaveManager.onFlush = (message) => {
+          debugLog.log(`[auto-save] ${message}`);
+        };
         autoSaveManager.start();
         debugLog.log('Auto-save started (every 30 seconds + on tab close)');
-      } else if (bootMode === 'templeos' && bootMedium === 'cd' && savedDiskData) {
+      } else if (bootMode === 'templeos' && bootMedium === 'cd' && hasSavedDisk) {
         debugLog.log('CD-only session: auto-save disabled to protect existing disk image');
       }
 
