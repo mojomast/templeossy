@@ -1,0 +1,16 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    qemu-system-x86 \
+    qemu-utils \
+    netcat-openbsd \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY boot-test.sh /workspace/boot-test.sh
+COPY analyze-ppm.py /workspace/analyze-ppm.py
+RUN chmod +x /workspace/boot-test.sh /workspace/analyze-ppm.py
+
+CMD ["/workspace/boot-test.sh"]
