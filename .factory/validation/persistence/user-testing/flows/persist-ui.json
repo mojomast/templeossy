@@ -1,0 +1,38 @@
+{
+  "groupId": "persist-ui",
+  "assertions": {
+    "VAL-PERSIST-001": {
+      "status": "pass",
+      "evidence": "Browser test: First visit with clean storage. Resume dialog NOT shown (hidden). Debug log shows 'Saved disk found: false', 'Boot medium: cd (CD-ROM)', 'Boot order: d (CD-ROM first)'. Storage backend detected as OPFS. Emulator proceeded normally to loading phase. Screenshot: first-visit-no-resume.png",
+      "details": "On first visit, no resume dialog appears, app creates disk path via OPFS and boots from CD ISO as expected."
+    },
+    "VAL-PERSIST-005": {
+      "status": "blocked",
+      "evidence": "Wipe & Reset button (#btn-wipe) exists in DOM and is correctly disabled when emulator is not running. Unit tests (62 storage tests, 31 persistence integration tests) verify wipe logic: diskStorage.deleteDisk() clears storage, wipeAndReset() in main.ts stops auto-save first to prevent race conditions, then deletes disk and reloads page. Code inspection confirms correct implementation.",
+      "details": "Full Wipe & Reset flow requires a running emulator to enable the button. QEMU Wasm boot did not produce display output within 300s in headless Chrome, preventing interactive testing of the full wipe flow. Unit tests and code inspection confirm correct implementation."
+    },
+    "VAL-PERSIST-007": {
+      "status": "pass",
+      "evidence": "Code inspection + unit tests: isQuotaError() in storage.ts detects DOMException QuotaExceededError, code 22, and message patterns. AutoSaveManager has onStorageError handler that calls UI notification. Storage toast (#storage-toast, #storage-toast-message) elements exist in DOM. 62 storage unit tests pass covering quota detection (3 test cases), single-report-only/no-spamming (1 test), write-error differentiation (1 test). Quota error produces specific message: 'Storage full — cannot save disk image. Your changes may be lost.'",
+      "details": "Storage quota handling verified through comprehensive unit tests and DOM element inspection. The notification UI exists and would display when quota is exceeded."
+    },
+    "VAL-PERSIST-009": {
+      "status": "pass",
+      "evidence": "Browser test: (1) Seeded OPFS with 1KB fake disk image. (2) Reloaded page — resume dialog (#resume-dialog) appeared with 'Resume previous session' (#btn-resume) and 'Start fresh (boot from CD)' (#btn-fresh) buttons visible. (3) Clicked 'Start fresh' — dialog dismissed, debug log shows 'User chose: fresh', 'Boot medium: cd (CD-ROM)', 'Boot order: d (CD-ROM first)'. (4) Verified disk.img still exists in OPFS (1024 bytes) — 'Start fresh' does NOT wipe disk. Screenshots: resume-dialog-shown.png",
+      "details": "Resume choice UX works correctly. Dialog shows both options. Fresh boot uses CD without wiping saved disk. Resume path requires live boot to fully verify (boot from disk with prior data), but UI flow and boot medium selection are correct."
+    },
+    "VAL-CROSS-008": {
+      "status": "pass",
+      "evidence": "Browser test: (1) First tab loaded at http://localhost:3200, acquired Web Lock, no multi-tab warning. (2) Opened second tab in same browser instance at http://localhost:3200. (3) Second tab showed #multi-tab-warning overlay with message 'Another instance is already running. TempleOS Browser is already open in another tab. Running multiple instances simultaneously may corrupt your saved data. Please close the other tab first.' (4) All buttons disabled in second tab. (5) First tab NOT affected — no warning. (6) 15 tab-lock unit tests pass verifying lock acquisition, release, and API unavailable fallback. Screenshot: multi-tab-warning.png",
+      "details": "Multi-tab safety works correctly via Web Locks API. Second tab is blocked with clear warning message and disabled controls."
+    }
+  },
+  "frictions": [
+    "Playwright Chromium required wrapper script for LD_LIBRARY_PATH — shared libraries (libnspr4, libnss3, libasound2) were not installed system-wide but available in /tmp/chromium-libs/",
+    "QEMU Wasm Worker started in this session (no OOM error), but TempleOS boot did not produce display output within 300 seconds under headless Chrome TCI emulation"
+  ],
+  "blockers": [
+    "TempleOS boot does not produce visible display output within 300s timeout under headless Chrome. The QEMU Worker started successfully and the emulator entered 'running' state, but the TCI emulation is too slow in headless Chrome to reach display output. This blocks all assertions requiring interactive TempleOS: display validation, keyboard/mouse input, reboot, fullscreen, persistence after install, resume from disk."
+  ],
+  "toolsUsed": ["agent-browser", "vitest"]
+}

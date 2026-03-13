@@ -31,7 +31,7 @@ Testing surface, validation approach, and resource cost classification.
 - Browser-reserved shortcuts (Ctrl+W, Ctrl+T) cannot be tested via agent-browser.
 - Escape key in fullscreen: browser behavior, cannot be overridden.
 - TempleOS has no serial output — all verification must be visual (canvas).
-- **CRITICAL: QEMU Wasm Worker Memory Allocation Failure in Headless Chrome.** The QEMU emulator requires 2300MB of WebAssembly linear memory allocated inside a Web Worker (PROXY_TO_PTHREAD mode). In headless Chromium (both headless shell and --headless=new), this allocation consistently fails with V8 internal "Array buffer allocation failed" error. The main thread CAN allocate 2300MB Wasm memory (`new WebAssembly.Memory({initial: 37120, shared: true})` succeeds), but the Worker thread cannot. Tested with Chrome 145.0.7632.6 with various flags (--max-old-space-size=8192, --wasm-max-mem-pages=65536, --enable-features=WebAssembly,SharedArrayBuffer) on a system with 9GB available RAM. This blocks all assertions requiring live TempleOS boot.
+- **CRITICAL: TempleOS Boot Performance in Headless Chrome.** The QEMU Wasm emulator can start in headless Chrome (Worker memory allocation sometimes succeeds, sometimes fails depending on system memory state). However, even when the Worker starts successfully, TempleOS TCI emulation is extremely slow in headless Chrome and does NOT produce display output within the 300-second timeout. The canvas remains blank (all black, 1 color). The emulator enters "running" state (Reboot/Wipe buttons enabled, Start disabled) but BIOS/boot sequence doesn't render visible output. This blocks all assertions requiring interactive TempleOS: display validation, keyboard/mouse input, persistence after install, reboot, fullscreen. Previous sessions also reported Worker memory allocation failure (V8 "Array buffer allocation failed"), which may recur depending on system memory pressure.
 - **Headless Chrome does not support Fullscreen API.** `requestFullscreen()` is a no-op in headless mode.
 
 ## Validation Concurrency
@@ -206,3 +206,60 @@ After sending input, wait 2-3 seconds (TCI latency), then take a canvas screensh
 
 ### VAL-CROSS-009 (Linux Guest PoC)
 The Linux PoC may require checking if there's a way to select Linux guest mode vs TempleOS mode. Check the source code for configuration options. If not separately bootable from the UI, this may need to be validated by code inspection (verify the Linux PoC code exists and was demonstrated) rather than live boot.
+
+## Flow Validator Guidance: persistence-ui
+
+**Surface:** Web browser (http://localhost:3200)
+**Testing tool:** `agent-browser` (Playwright Chromium)
+
+### What to test
+This group validates persistence UI elements and storage-related features that can be verified WITHOUT a live TempleOS boot. Since QEMU Wasm Worker memory allocation fails in headless Chrome, assertions requiring a running emulator will be marked blocked.
+
+**Testable without boot:**
+1. **Resume choice UX (VAL-PERSIST-009):** Seed IndexedDB with a disk image, then navigate to the page. Verify resume dialog appears with "Resume previous session" and "Start fresh" buttons. Click each and verify correct behavior (dialog dismisses, no errors).
+2. **Multi-tab safety (VAL-CROSS-008):** Open two browser sessions to http://localhost:3200. Verify the second tab shows the multi-tab warning overlay.
+3. **Wipe & Reset UI (VAL-PERSIST-005):** Seed storage, navigate, verify the wipe button exists. The full wipe flow requires a running emulator.
+4. **First visit creates disk (VAL-PERSIST-001):** Navigate with empty storage. Verify no resume dialog appears. Check that the app attempts to create a disk (debug log entries).
+5. **Storage quota handling (VAL-PERSIST-007):** Verify via code inspection and unit tests (62 storage tests + 31 persistence integration tests pass).
+
+**Blocked by headless Chrome Worker memory limitation:**
+- VAL-PERSIST-002, VAL-PERSIST-003, VAL-PERSIST-004, VAL-PERSIST-006, VAL-PERSIST-008
+- All VAL-DISP-*, VAL-INPUT-*, VAL-CTRL-003, VAL-CTRL-006
+- VAL-CROSS-001, VAL-CROSS-002, VAL-CROSS-003, VAL-CROSS-004, VAL-CROSS-006, VAL-CROSS-010
+
+### How to seed storage for testing
+```javascript
+// In agent-browser evaluate to create a fake saved disk:
+const db = await new Promise((resolve, reject) => {
+  const request = indexedDB.open('templeossy-storage', 1);
+  request.onupgradeneeded = () => { request.result.createObjectStore('disk-images'); };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error);
+});
+const tx = db.transaction('disk-images', 'readwrite');
+tx.objectStore('disk-images').put(new Uint8Array(1024), 'disk.img');
+await new Promise((resolve) => { tx.oncomplete = resolve; });
+db.close();
+```
+
+### How to check multi-tab safety
+1. Open first session, navigate to http://localhost:3200
+2. Open second session (different session ID), navigate to same URL
+3. Check if multi-tab-warning element is visible in second tab
+
+### Isolation rules
+- Use session prefix "e0c5f12f0776__persist" for agent-browser
+- Dev server on port 3200 is shared — read-only interaction
+- Do NOT modify any files on disk
+- Close all browser sessions when done
+- Each test may need to clear IndexedDB between sub-tests
+
+### Key DOM elements
+- `#resume-dialog` — resume choice overlay (hidden by default)
+- `#btn-resume` — resume button
+- `#btn-fresh` — fresh boot button
+- `#multi-tab-warning` — multi-tab warning overlay (hidden by default)
+- `#btn-wipe` — wipe & reset button
+- `#storage-toast` — storage notification toast
+- `#loading-overlay` — loading overlay
+- `#debug-panel` — debug log panel

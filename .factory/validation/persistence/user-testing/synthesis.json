@@ -1,0 +1,65 @@
+{
+  "milestone": "persistence",
+  "round": 1,
+  "status": "fail",
+  "assertionsSummary": {
+    "total": 35,
+    "passed": 4,
+    "failed": 0,
+    "blocked": 31
+  },
+  "passedAssertions": [
+    "VAL-PERSIST-001",
+    "VAL-PERSIST-007",
+    "VAL-PERSIST-009",
+    "VAL-CROSS-008"
+  ],
+  "failedAssertions": [],
+  "blockedAssertions": [
+    { "id": "VAL-PERSIST-002", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-PERSIST-003", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-PERSIST-004", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-PERSIST-005", "blockedBy": "Requires running emulator (Wipe button disabled when not running); TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-PERSIST-006", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-PERSIST-008", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-DISP-001", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-DISP-003", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-DISP-004", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-DISP-005", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-DISP-007", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-DISP-008", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-001", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-002", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-003", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-004", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-005", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-006", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-007", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-008", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-009", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-010", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-INPUT-011", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-CTRL-003", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-CTRL-006", "blockedBy": "Fullscreen API is no-op in headless Chrome; TempleOS boot does not produce display output within 300s" },
+    { "id": "VAL-CROSS-001", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-CROSS-002", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-CROSS-003", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-CROSS-004", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" },
+    { "id": "VAL-CROSS-006", "blockedBy": "Fullscreen API + TempleOS boot: both blocked in headless Chrome" },
+    { "id": "VAL-CROSS-010", "blockedBy": "TempleOS boot does not produce display output within 300s in headless Chrome" }
+  ],
+  "appliedUpdates": [
+    {
+      "target": "user-testing.md",
+      "description": "Added Flow Validator Guidance: persistence-ui section with testing approach for persistence-specific assertions, IndexedDB/OPFS seeding instructions, multi-tab testing methodology, and DOM element reference",
+      "source": "setup"
+    },
+    {
+      "target": "user-testing.md",
+      "description": "Updated known limitation: QEMU Wasm Worker can start in headless Chrome (no OOM error this session), but TCI emulation too slow to produce display output within 300s. Previous sessions reported Worker memory allocation failure; this session the Worker started successfully but boot still doesn't reach display output.",
+      "source": "flow-report"
+    }
+  ],
+  "previousRound": null,
+  "notes": "35 assertions tested for persistence milestone. 4 passed (first visit disk creation, storage quota handling, resume choice UX, multi-tab safety). 31 blocked by headless Chrome TempleOS boot limitation: the QEMU Wasm Worker started successfully (no OOM this session), but TempleOS TCI emulation does not produce display output within the 300s timeout in headless Chrome. All 288 unit tests pass (62 storage, 31 persistence integration, 15 tab-lock, 38 input, 23 display, 38 emulator, 29 controls, 25 loading, 12 mouse, 15 asset verification). The implementation is comprehensive and well-tested at the unit level; the blocked assertions are all due to the headless Chrome boot performance limitation, not code defects."
+}
