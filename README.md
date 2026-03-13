@@ -2,25 +2,25 @@
 
 TempleOSsy is a browser-hosted QEMU-on-WebAssembly project for 64-bit x86 operating systems. It packages an `x86_64-softmmu` QEMU build, runs it in the browser with pthreads and `SharedArrayBuffer`, and renders the guest VGA framebuffer to an HTML canvas.
 
-The current app focuses on booting TempleOS V5.03, but the underlying QEMU build targets 64-bit guest systems rather than a TempleOS-only runtime.
+The current app boots [Shrine v5.05.1](https://github.com/minexew/Shrine), a TempleOS-compatible fork designed for VM stability. Shrine is only 3.67 MB, boots as a live CD, includes Lambda Shell, and is more reliable than stock TempleOS in emulated environments.
 
 ## What It Does
 
 - Runs a 64-bit QEMU system emulator (`qemu-system-x86_64`) compiled to WebAssembly
-- Boots bundled TempleOS media directly in the browser
+- Boots the bundled Shrine v5.05.1 ISO directly in the browser as a live CD
 - Supports a second Linux proof-of-concept boot path for display/runtime testing
 - Renders VGA output through a custom QEMU display bridge in `build/emscripten.c`
 - Captures keyboard and mouse input in the browser and forwards it into QEMU
-- Persists the writable virtual disk with OPFS, with IndexedDB fallback
 
 ## Current Status
 
 This project is experimental.
 
 - The QEMU build and frontend are wired up end-to-end in the browser
+- Shrine v5.05.1 boots reliably as a live CD session
 - Cross-origin isolation is required because the emulator uses pthreads and `SharedArrayBuffer`
 - The Wasm QEMU runtime reserves about 2.3 GB of shared memory, so browser memory pressure still matters
-- TempleOS boot reliability and performance depend heavily on browser/runtime behavior
+- Disk persistence is currently disabled (code retained for future use); each session starts fresh from the CD
 
 ## Features
 
@@ -28,9 +28,8 @@ This project is experimental.
 - Custom framebuffer export API: `_qemu_display_data`, `_qemu_display_width`, `_qemu_display_height`, `_qemu_display_stride`, `_qemu_display_check_dirty`
 - Canvas renderer with stride-aware BGRX-to-RGBA conversion
 - Keyboard and mouse forwarding into the guest
-- Start, Reboot, Wipe & Reset, and Fullscreen controls
-- Resume/fresh boot flow for existing saved TempleOS disk images
-- Multi-tab disk safety through the Web Locks API
+- Start, Reboot, and Fullscreen controls
+- Disk persistence code retained but currently disabled (live CD session only)
 - Example Nginx and Caddy configs for COOP/COEP hosting
 
 ## Requirements
@@ -134,16 +133,12 @@ Typical full rebuild time is on the order of tens of minutes.
 
 ## Boot Modes
 
-- Default TempleOS mode boots the bundled `TempleOSCDV5.03.ISO`
+- Default mode boots the bundled Shrine v5.05.1 ISO as a live CD
 - A Linux proof-of-concept mode is available for bring-up and diagnostics
-- TempleOS sessions can resume from a saved writable disk image or start fresh from CD
 
 ## Persistence
 
-- Saved disk images are stored in OPFS when available
-- IndexedDB is used as a fallback backend
-- The current initial writable disk size is 128 MB for browser practicality
-- Wipe & Reset deletes the saved disk image and starts over
+Disk persistence is currently disabled. The emulator runs as a live CD session only—each boot starts fresh from the Shrine ISO. The persistence infrastructure (OPFS with IndexedDB fallback) is retained in the codebase for future use.
 
 ## Project Structure
 
@@ -161,9 +156,7 @@ vite.config.ts         dev server config with COOP/COEP headers
 
 **Keyboard not responding:** Click directly on the display canvas to focus it. The keyboard handler only forwards events when the display container has focus. After clicking Start, click the canvas area once more to ensure focus is set.
 
-**Slow boot:** TempleOS takes 1-2 minutes to boot under QEMU Wasm TCI emulation. The display may appear frozen during this time. Wait for frames to start updating (visible in the Debug Log).
-
-**TempleOS first-boot prompts:** On first boot from CD, TempleOS shows a white dialog box asking setup questions (install to hard drive, screen resolution, etc.). Answer with Y/N keys followed by Enter. This is normal TempleOS behavior.
+**Slow boot:** Shrine takes 1–2 minutes to boot under QEMU Wasm TCI emulation. The display may appear frozen during this time. Wait for frames to start updating (visible in the Debug Log).
 
 **Out of memory:** The emulator requires ~2.3 GB of WebAssembly memory. Close other tabs and applications if the browser fails to allocate memory.
 
@@ -176,7 +169,8 @@ vite.config.ts         dev server config with COOP/COEP headers
 
 ## License
 
-- TempleOS and the TempleOS V5.03 ISO are public domain as declared by Terry A. Davis
+- TempleOS is public domain as declared by Terry A. Davis
+- Shrine is released under the [Unlicense](https://unlicense.org/)
 - QEMU is GPLv2
 - `build/emscripten.c` follows GPLv2 to match QEMU integration requirements
 - The frontend TypeScript code in `src/` does not yet declare a separate formal license
