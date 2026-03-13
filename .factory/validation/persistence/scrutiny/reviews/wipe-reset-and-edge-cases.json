@@ -1,0 +1,45 @@
+{
+  "featureId": "wipe-reset-and-edge-cases",
+  "reviewedAt": "2026-03-13T05:40:00.000Z",
+  "commitId": "b1e42bb",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of all four feature requirements: Wipe & Reset, CD-only session safety, storage quota handling, and multi-tab safety. Code is clean, well-documented, and follows existing project patterns. The original commit (b1e42bb) had a race condition in wipeAndReset where `void autoSaveManager.stop()` didn't await the final flush before calling deleteDisk(), but this was properly fixed in the follow-up commit (558b76b) with correct promise chaining. All 288 tests pass including 33 new tests covering the feature. Two minor non-blocking observations around error notification deduplication noted below.",
+    "issues": [
+      {
+        "file": "src/storage.ts",
+        "line": 487,
+        "severity": "non_blocking",
+        "description": "Quota error deduplication flag `_quotaErrorReported` is never reset. If storage quota is temporarily exceeded then later freed (e.g., user clears other browser data), and quota is exceeded again in a subsequent session period, the user will not be re-notified. Consider resetting the flag on successful flush or providing a reset mechanism. Minor edge case for MVP."
+      },
+      {
+        "file": "src/storage.ts",
+        "line": 494,
+        "severity": "non_blocking",
+        "description": "Non-quota write errors (type 'write-error') are NOT deduplicated. Each failed flush cycle triggers a new onStorageError callback, which in main.ts calls showStorageToast(). While the toast auto-hides after 15 seconds, repeated failures every 30 seconds could create overlapping toast notifications. Consider adding deduplication similar to the quota error pattern."
+      },
+      {
+        "file": "src/main.ts",
+        "line": 336,
+        "severity": "non_blocking",
+        "description": "Original commit (b1e42bb) had a race condition in wipeAndReset: `void autoSaveManager.stop()` fired the stop without awaiting it, then immediately called `diskStorage.deleteDisk()`. The final flush in stop() could re-write the disk after deletion. This was correctly fixed in 558b76b with proper promise chaining (stopPromise.then(() => diskStorage.deleteDisk())). Noting for record — the bug shipped but was caught and fixed in the same feature cycle."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "The multi-tab warning overlay uses z-index: 100 and the storage toast uses z-index: 90. There is no documented z-index layering convention in AGENTS.md. As the UI grows, a z-index scale convention would prevent layering conflicts (e.g., loading overlay, resume dialog, multi-tab warning, toast).",
+      "evidence": "src/style.css: .multi-tab-warning has z-index: 100, .storage-toast has z-index: 90. The loading overlay and resume dialog don't have explicit z-index values but use position:absolute within their containers."
+    },
+    {
+      "area": "conventions",
+      "observation": "Toast notification pattern introduced (showStorageToast in main.ts) is an inline function rather than a reusable component. If more notification types are needed in the future, this pattern should be standardized. Not a problem for MVP but worth noting.",
+      "evidence": "src/main.ts: showStorageToast() function is a one-off implementation with auto-hide timer and close button, defined inline in main.ts rather than as a reusable module."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. All four requirements (Wipe & Reset, CD-only session safety, storage quota handling, multi-tab safety) are correctly implemented with proper tests (33 new tests, 288 total passing). The Web Locks API usage for multi-tab detection is clean with proper ifAvailable:true non-blocking acquisition and graceful degradation. CD-only session safety correctly disables auto-save to protect existing installed disks. Storage quota detection covers DOMException.name, code 22, and message-based patterns. The original commit had a race condition in wipeAndReset (void stop() before delete) that was fixed in the follow-up commit 558b76b. Two minor non-blocking issues noted: quota error flag never resets, and non-quota write errors lack deduplication."
+}

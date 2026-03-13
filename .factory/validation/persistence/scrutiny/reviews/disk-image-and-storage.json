@@ -1,0 +1,62 @@
+{
+  "featureId": "disk-image-and-storage",
+  "reviewedAt": "2026-03-13T05:39:30.000Z",
+  "commitId": "b00e3ea",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of disk image persistence with OPFS/IndexedDB storage abstraction, auto-save, resume choice UX, and configurable boot medium. Code is well-structured with clean separation between storage layer (storage.ts), emulator integration (emulator.ts), and UI wiring (main.ts). All 288 tests pass and typecheck is clean. Error handling is thorough with graceful fallbacks throughout. The CD-only session safety guard (disabling auto-save when user boots fresh with existing disk) prevents data corruption. Quota error detection and one-time notification are well-implemented. The wipeAndReset flow properly awaits auto-save stop before deleting disk to prevent race conditions.",
+    "issues": [
+      {
+        "file": "src/storage.ts",
+        "line": 126,
+        "severity": "non_blocking",
+        "description": "opfsSaveDisk creates a full copy of the data via `new Uint8Array(data)` before writing. For a 2GB sparse disk image, this temporarily doubles memory usage. This is necessary because data may come from SharedArrayBuffer-backed Wasm memory (which OPFS APIs may reject), but could be optimized to only copy when the buffer is shared."
+      },
+      {
+        "file": "src/emulator.ts",
+        "line": 322,
+        "severity": "non_blocking",
+        "description": "readDiskImage() reads the entire disk file from Emscripten FS via FS.readFile('/pack/disk.img'). For a 2GB sparse disk, this returns the full materialized file every 30 seconds during auto-save. Performance may degrade as the disk fills up. A delta/checksum approach could reduce I/O but would add significant complexity."
+      },
+      {
+        "file": "src/storage.ts",
+        "line": 395,
+        "severity": "non_blocking",
+        "description": "flushSync() in the beforeunload handler fires an async saveDisk() without awaiting it (fire-and-forget). For large disk images, the browser may close before the write completes, potentially losing the last few seconds of data. The code comments acknowledge this as an acceptable trade-off. Consider using the Beacon API or navigator.sendBeacon for critical data, though neither supports binary blobs of this size."
+      },
+      {
+        "file": "src/storage.ts",
+        "line": 265,
+        "severity": "non_blocking",
+        "description": "createDisk(_sizeBytes) ignores the size parameter and returns an empty Uint8Array(0). The actual sparse disk creation (2GB truncate) happens in emulator.ts preRun. The method signature is slightly misleading — the parameter suggests the returned array would be sized, but it's always empty. Consider renaming to createDiskPlaceholder() or documenting more prominently."
+      },
+      {
+        "file": "src/storage.test.ts",
+        "line": 217,
+        "severity": "non_blocking",
+        "description": "DiskStorage operations tests replace instance methods with vi.fn() mocks, testing the mock behavior rather than the actual OPFS/IndexedDB implementations. This is acceptable since jsdom lacks these APIs, but means the actual storage backends are only tested via manual browser verification. The test names clearly indicate '(via mock)' which is good."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "AGENTS.md and architecture.md are already well-aligned with the implementation. The persistence pipeline section in architecture.md accurately describes the auto-save flow. No convention gaps detected — worker followed existing patterns (vanilla TS, Vitest, TDD approach, error handling conventions).",
+      "evidence": "architecture.md 'Persistence Pipeline' section matches storage.ts implementation; AGENTS.md 'Storage' bullet matches DiskStorage API"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker followed the skill procedure correctly: read feature description, wrote tests first (TDD), implemented, ran typecheck/test/lint. The handoff skillFeedback confirms followedProcedure=true with no deviations. The skill's persistence section accurately describes the patterns used.",
+      "evidence": "Transcript skeleton shows TDD flow: created storage.test.ts before storage.ts implementation. Handoff skillFeedback.followedProcedure=true, deviations=[]"
+    },
+    {
+      "area": "knowledge",
+      "observation": "The Uint8Array<ArrayBufferLike> vs Uint8Array<ArrayBuffer> TypeScript type incompatibility required a workaround (data copy + type cast in opfsSaveDisk). This is a TypeScript strict mode quirk when working with Wasm memory that could be documented in .factory/library/ to help future workers avoid the same debugging cycle.",
+      "evidence": "src/storage.ts:126 — `const copy = new Uint8Array(data); await writable.write(copy as unknown as Uint8Array<ArrayBuffer>)` — transcript shows worker hit a typecheck error and iterated twice to resolve it"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS — The disk-image-and-storage feature is well-implemented with comprehensive storage abstraction (OPFS primary, IndexedDB fallback), proper auto-save lifecycle management, resume choice UX, and CD-only session safety guards. All 288 tests pass, typecheck is clean. The implementation correctly fulfills VAL-PERSIST-001 through VAL-PERSIST-004, VAL-PERSIST-008, and VAL-PERSIST-009. Non-blocking issues noted around memory efficiency of full-disk reads during auto-save and the inherent limitations of beforeunload flush for large data, but these are acceptable trade-offs documented in code comments."
+}

@@ -1,0 +1,45 @@
+{
+  "featureId": "persistence-integration-flows",
+  "reviewedAt": "2026-03-13T05:39:00.000Z",
+  "commitId": "558b76b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "The commit makes two changes: (1) a targeted race condition fix in src/main.ts wipeAndReset() that properly chains autoSaveManager.stop() → deleteDisk() via promise sequencing instead of fire-and-forget `void autoSaveManager.stop()`, and (2) a comprehensive new integration test file (src/persistence-integration.test.ts, 1023 lines, 31 tests) covering all 6 persistence flows. The race condition fix is correct and well-commented. The test file is well-structured, thorough, and tests meaningful integration scenarios using mock storage with in-memory backing. All 288 tests pass and typecheck is clean.",
+    "issues": [
+      {
+        "file": "src/persistence-integration.test.ts",
+        "line": 139,
+        "severity": "non_blocking",
+        "description": "The 'falls back to CD boot if disk load fails' test manually overrides bootMedium after selectBootMedium returns 'disk', simulating application-level fallback logic that lives in main.ts. This is somewhat fragile — it tests a code pattern that isn't directly exported or unit-testable. The test does correctly document the expected behavior via comments, but the fallback logic itself (in main.ts) isn't directly tested by this test. Acceptable for integration-level coverage but worth noting."
+      },
+      {
+        "file": "src/persistence-integration.test.ts",
+        "line": 786,
+        "severity": "non_blocking",
+        "description": "The multi-tab safety test directly mocks navigator.locks.request with Object.defineProperty on globalThis.navigator. While functional, this mutates global state that could leak between tests. The test does work in isolation, but the global mock isn't cleaned up in afterEach. Since Vitest runs test files in isolated environments this is unlikely to cause issues in practice."
+      },
+      {
+        "file": "src/persistence-integration.test.ts",
+        "line": 333,
+        "severity": "non_blocking",
+        "description": "The 'disk not corrupted by concurrent save failure' test spies on console.warn but the spy is created within the test scope; if AutoSaveManager logs warnings via console.warn before the spy is set up, they would leak. In practice the spy is set before autoSave.start() so this works correctly."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "Worker's skillFeedback suggests that for integration verification features, reviewing code first to find issues then writing tests is more natural than strict TDD. The skill says 'Write tests first (TDD)' but this doesn't always apply for features whose primary goal is verifying existing flows and fixing discovered issues. The skill could note this exception.",
+      "evidence": "Handoff skillFeedback.suggestedChanges: 'The frontend-worker skill mentions Write tests first (TDD) but for integration verification features where the primary goal is to verify existing flows and fix issues, reviewing code first to find issues and then writing tests that cover both the fix and integration flows is more natural and effective.'"
+    },
+    {
+      "area": "conventions",
+      "observation": "The transcript skeleton for this worker session has 0 tool calls logged, which means the worker-transcripts.jsonl entry is essentially empty. This may be a logging gap rather than a convention issue, but it means scrutiny has limited visibility into the worker's actual process for this session.",
+      "evidence": "worker-transcripts.jsonl entry for session 06c24043-378c-4a6e-9606-ab0aca395461 shows toolCalls count: 0"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Pass. The commit correctly fixes a real race condition in wipeAndReset (void stop → chained promise) and adds 31 comprehensive integration tests covering all 6 required persistence flows. The fix is minimal, targeted, and well-commented. Tests are thorough, covering return visitor resume, full lifecycle, crash recovery, TempleOS installation, CD-only session safety, wipe sequencing, multi-tab safety, storage error recovery, EmulatorLoader disk reading, and boot medium integration. All 288 tests pass, typecheck is clean. Three non-blocking style observations noted but none affect correctness."
+}
