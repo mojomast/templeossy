@@ -14,7 +14,8 @@ Testing surface, validation approach, and resource cost classification.
 **Dev server command:** `npm run dev -- --port 3200`
 
 ### Prerequisites
-- Playwright Chromium installed at `/home/mojo/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome`
+- Playwright Chromium binary at `/home/mojo/.cache/ms-playwright/chromium-1208/chrome-linux64/chrome`
+- **KNOWN ISSUE:** Playwright system dependencies (libnspr4, libnss3, etc.) may not be installed. If agent-browser fails with missing library errors, validators should fall back to curl-based verification and manual console checks where possible.
 - Dev server must be started before testing
 - COOP/COEP headers must be set (Vite config handles this)
 
