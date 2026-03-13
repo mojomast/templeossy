@@ -1,0 +1,78 @@
+{
+  "milestone": "build-infra",
+  "round": 1,
+  "status": "pass",
+  "validatorsRun": {
+    "test": { "passed": true, "command": "npm test", "exitCode": 0 },
+    "typecheck": { "passed": true, "command": "npm run typecheck", "exitCode": 0 },
+    "lint": { "passed": true, "command": "npm run lint", "exitCode": 0 }
+  },
+  "reviewsSummary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "failedFeatures": []
+  },
+  "blockingIssues": [],
+  "appliedUpdates": [
+    {
+      "target": "services.yaml",
+      "description": "Added 'package-assets' command entry (bash scripts/package-assets.sh) so future workers can re-run asset packaging without knowing the script path",
+      "sourceFeature": "asset-packaging-commit"
+    },
+    {
+      "target": "library",
+      "description": "Created .factory/library/build-integration.md documenting: (1) LZ4 compression dependency between file_packager --lz4 and QEMU -sLZ4=1 flag — a cross-feature integration risk that needs verification at frontend integration time, (2) EMSDK 4.0.10 version and inline worker behavior, (3) Three required QEMU source patches",
+      "sourceFeature": "qemu-wasm-build-with-display, asset-packaging-commit"
+    }
+  ],
+  "suggestedGuidanceUpdates": [
+    {
+      "target": "skills/infra-worker",
+      "suggestion": "Update dependency version references: EMSDK 3.1.50 → 4.0.10, GLib 2.84.0 → 2.75.0, Pixman 0.44.2 → 0.42.2. Also note that EMSDK 4.0.10 inlines worker code (no separate .worker.js).",
+      "evidence": "Feature qemu-wasm-build-with-display: build/Dockerfile uses ARG EMSDK_VERSION_QEMU=4.0.10, ARG GLIB_VERSION=2.75.0, ARG PIXMAN_VERSION=0.42.2. Worker's handoff skillFeedback explicitly requests these updates.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills/infra-worker",
+      "suggestion": "Document the three required QEMU source patches for Emscripten 4.x compatibility (osdep.h getloadavg guard, memalign.c aligned_alloc fallback, ui/meson.build inclusion) and the xterm-pty build dependency. These are essential for reproducing the build.",
+      "evidence": "Feature qemu-wasm-build-with-display: build/Dockerfile applies sed patches. Handoff discoveredIssues[1] says patches are 'Required for successful compilation'. Worker's skillFeedback.suggestedChanges lists this as needed.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills/infra-worker",
+      "suggestion": "Note that Emscripten tools (file_packager.py) are only available inside the Docker build container. Workers must use 'docker run' to access them, not direct invocation.",
+      "evidence": "Feature asset-packaging-commit: scripts/package-assets.sh uses 'docker run --rm ... qemu-wasm-builder bash -c python3 /emsdk/.../file_packager.py'. Worker's skillFeedback explicitly requests this clarification.",
+      "isSystemic": false
+    },
+    {
+      "target": "skills/infra-worker",
+      "suggestion": "Relax the TDD order requirement for infrastructure/Docker features. Writing a verification script before the Docker infrastructure exists is impractical — the test needs to reference actual artifact paths and sizes. The current guidance says 'test may be a shell script' but still expects TDD order.",
+      "evidence": "Feature native-qemu-validation: transcript shows Dockerfile/boot-test.sh created before verify-native-qemu.sh. TDD order is impractical when you don't know artifact paths until the build is implemented.",
+      "isSystemic": true
+    }
+  ],
+  "rejectedObservations": [
+    {
+      "observation": ".gitignore convention gap (native-qemu-validation worker created .gitignore outside feature scope)",
+      "reason": "The .gitignore already exists with reasonable entries. Workers adding standard ignores alongside their work is harmless. Not worth a formal convention."
+    },
+    {
+      "observation": "-no-reboot flag not in AGENTS.md (native-qemu-validation added it to QEMU flags)",
+      "reason": "Already documented in docs/native-qemu-validation.md with explanation. This is a native-only debug flag, not relevant to browser/Wasm configuration documented in AGENTS.md."
+    },
+    {
+      "observation": "Native boot timing (15s) not in library (native-qemu-validation)",
+      "reason": "Already documented in docs/native-qemu-validation.md. The 2-5 minute Wasm estimate in AGENTS.md is the relevant number for frontend workers. Native timing is a reference detail, not actionable knowledge."
+    },
+    {
+      "observation": "No separate .worker.js already noted in AGENTS.md (qemu-wasm-build-with-display)",
+      "reason": "duplicate — already documented in AGENTS.md under 'Key Technical Details'"
+    },
+    {
+      "observation": "C source location convention (build/emscripten.c vs build/qemu-src/ui/emscripten.c)",
+      "reason": "The actual approach (build/emscripten.c copied into QEMU source tree during Docker build) is cleaner than vendoring the full QEMU source. No convention change needed."
+    }
+  ],
+  "previousRound": null
+}

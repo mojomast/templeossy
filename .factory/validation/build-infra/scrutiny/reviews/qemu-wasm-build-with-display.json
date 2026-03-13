@@ -1,0 +1,61 @@
+{
+  "featureId": "qemu-wasm-build-with-display",
+  "reviewedAt": "2026-03-13T02:10:00.000Z",
+  "commitId": "0a7ef9b",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation of the QEMU Wasm build pipeline and custom Emscripten display backend. The Dockerfile is a well-structured 297-line multi-stage build that cross-compiles all dependencies (zlib, libffi, GLib, Pixman) and QEMU with correct Emscripten flags. The display backend (build/emscripten.c, 297 lines) properly implements DisplayChangeListener with dpy_gfx_update/switch/refresh callbacks, exports 10 EMSCRIPTEN_KEEPALIVE functions for framebuffer access, keyboard input (PS/2 scancodes), and both relative and absolute mouse input. Build artifacts verified: 40.5MB .wasm, 272KB .js glue, 4 BIOS ROMs. All expected behaviors met. EMSDK version was changed from 3.1.50 to 4.0.10 (matching container2wasm reference), which is a well-justified deviation documented in the handoff. Three source patches for Emscripten 4.x compatibility are correctly applied.",
+    "issues": [
+      {
+        "file": "build/emscripten.c",
+        "line": 199,
+        "severity": "non_blocking",
+        "description": "qemu_display_check_dirty() has a non-atomic read-and-clear race: if QEMU thread sets fb_dirty=1 between the if-check and the fb_dirty=0 clear, one frame update notification is lost. In practice this is inconsequential — the polling loop (30ms setInterval) will catch it on the next iteration — but using __atomic_exchange would be strictly correct."
+      },
+      {
+        "file": "build/emscripten.c",
+        "line": 38,
+        "severity": "non_blocking",
+        "description": "Shared framebuffer state uses 'volatile' for cross-thread visibility. While volatile is not a proper synchronization mechanism in C11, in the Emscripten/Wasm context with simple 32-bit aligned reads/writes and the polling pattern, this is functionally adequate. C11 _Atomic or __atomic builtins would be more correct but are not required for this use case."
+      },
+      {
+        "file": "build/emscripten.c",
+        "line": 161,
+        "severity": "non_blocking",
+        "description": "qemu_display_data() casts away volatile qualifier: (uint8_t *)exported_fb_ptr. This is technically undefined behavior in C but is benign in the Emscripten/Wasm memory model."
+      },
+      {
+        "file": "scripts/verify-wasm-build.sh",
+        "line": 83,
+        "severity": "non_blocking",
+        "description": "KEEPALIVE count check uses grep -c which counts all string occurrences (13, including 3 in comments), not just function decorators (10). The threshold of >= 6 is still correct, but the handoff's claim of '13 KEEPALIVE exports' is slightly misleading — there are 10 exported functions. Cosmetic issue only."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "skills",
+      "observation": "The infra-worker skill file still references outdated dependency versions: EMSDK 3.1.50, GLib 2.84.0, Pixman 0.44.2. The actual build uses EMSDK 4.0.10, GLib 2.75.0, Pixman 0.42.2, zlib 1.3.2. The handoff's skillFeedback explicitly requests this update. Worker followed procedure overall but deviated on EMSDK version with good justification.",
+      "evidence": ".factory/skills/infra-worker/SKILL.md line 'Emscripten SDK 3.1.50' vs build/Dockerfile ARG EMSDK_VERSION_QEMU=4.0.10. Handoff skillFeedback.deviations confirms EMSDK version change. skillFeedback.suggestedChanges lists 3 updates needed."
+    },
+    {
+      "area": "skills",
+      "observation": "The infra-worker skill does not document the three required QEMU source patches (getloadavg guard, memalign aligned_alloc fallback, ui/meson.build inclusion) or the xterm-pty dependency. These are essential for any future rebuild and were discovered during implementation.",
+      "evidence": "build/Dockerfile lines applying sed patches for osdep.h and Python patches for memalign.c. Handoff discoveredIssues[1] and skillFeedback.suggestedChanges mention documenting these patches."
+    },
+    {
+      "area": "skills",
+      "observation": "The infra-worker skill says to expect a separate .worker.js output file, but EMSDK 4.0.10 inlines worker code in the main .js file. The skill should note this behavioral change.",
+      "evidence": "Handoff discoveredIssues[0]: 'EMSDK 4.0.10 does not generate a separate .worker.js file with PROXY_TO_PTHREAD=1'. AGENTS.md already documents this ('No separate .worker.js')."
+    },
+    {
+      "area": "conventions",
+      "observation": "The display backend C source lives at build/emscripten.c in the repo but is copied into the QEMU source tree during Docker build (COPY emscripten.c /qemu/ui/emscripten.c). The feature description suggested build/qemu-src/ui/emscripten.c. The actual approach is cleaner (avoids duplicating the full QEMU source tree in the repo) but the convention of where C sources live should be noted.",
+      "evidence": "build/Dockerfile: 'COPY emscripten.c /qemu/ui/emscripten.c'. Feature description: 'build/qemu-src/ui/emscripten.c (or appropriate path)'."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "PASS. The QEMU Wasm build pipeline and custom Emscripten display backend are correctly implemented. All 7 expected behaviors are met: ktock/qemu-wasm integrated (commit 8604ed49), Dockerfile builds with cross-compiled deps, display backend has 10 KEEPALIVE exports covering framebuffer/keyboard/mouse, meson.build patched, build.sh + verify script created, build completes successfully, artifacts verified (40.5MB .wasm, 272KB .js, 4 BIOS ROMs). Four non-blocking code quality issues identified (volatile vs atomics, dirty flag race, volatile cast, grep count cosmetic). Key shared state gap: the infra-worker skill file needs updating to reflect actual dependency versions (EMSDK 4.0.10, GLib 2.75.0, Pixman 0.42.2) and the three required source patches."
+}

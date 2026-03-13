@@ -1,0 +1,61 @@
+{
+  "featureId": "native-qemu-validation",
+  "reviewedAt": "2026-03-13T02:10:00.000Z",
+  "commitId": "64976df",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Solid implementation that fulfills all expected behaviors. TempleOS V5.03 ISO downloaded (17,817,600 bytes exact), Docker-based QEMU boot test infrastructure created, 5 VGA screenshots captured at multiple boot stages (all 640x480 with 9-10 distinct colors), working QEMU flags documented comprehensively in docs/native-qemu-validation.md, and reference screenshots saved. The screenshot visually confirms a full TempleOS desktop with installer prompt, System Keys Quick Guide, and FPS counter. Code is clean, well-commented, and uses minimal dependencies (pure Python PNG writer, netcat for telnet). The verification script provides cross-platform artifact checks.",
+    "issues": [
+      {
+        "file": "build/analyze-ppm.py",
+        "line": 39,
+        "severity": "non_blocking",
+        "description": "The `maxval` variable is parsed from the PPM header but never used. If a PPM with maxval != 255 were provided, pixel values would not be scaled correctly. For QEMU screendump this is always 255 so it works, but the unused variable is a minor code smell."
+      },
+      {
+        "file": "build/analyze-ppm.py",
+        "line": 76,
+        "severity": "non_blocking",
+        "description": "PNG writer builds raw_data via repeated byte string concatenation in a nested loop (O(n²) for width*height). For 640x480 this creates ~307K concatenations — slow but workable for a one-off test tool. Using bytearray() with .extend() would be O(n)."
+      },
+      {
+        "file": "build/boot-test.sh",
+        "line": 30,
+        "severity": "non_blocking",
+        "description": "The `-no-reboot` flag was added to QEMU flags beyond what was specified in the feature description. This is a sensible addition (prevents infinite reboot loops aiding debugging) and is documented, but it's a minor deviation from the spec."
+      },
+      {
+        "file": "build/boot-test.sh",
+        "line": 51,
+        "severity": "non_blocking",
+        "description": "Monitor probe uses `echo \"\" | nc -q1 -w1 localhost $MONITOR_PORT` — the -q1 flag behavior varies across netcat implementations. The Docker image uses netcat-openbsd where -q1 works correctly, so this is fine in practice but could be fragile if the Dockerfile base changes."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "conventions",
+      "observation": "Worker created a .gitignore file (node_modules/, dist/, output/, *.log) that wasn't part of the feature scope. While reasonable, there's no documented convention in AGENTS.md about what should be in .gitignore or whether workers should create/modify it as part of unrelated features.",
+      "evidence": "Commit 64976df adds .gitignore with 4 entries. Feature description makes no mention of .gitignore."
+    },
+    {
+      "area": "skills",
+      "observation": "The infra-worker skill instructs 'Write Tests First (TDD)' but the worker implemented the Docker infrastructure and ran the boot test before creating verify-native-qemu.sh. For infrastructure/Docker features the skill also says 'the test may be a shell script that verifies artifact existence' which is what was created, but the TDD order (write test first, see it fail, then implement) was not followed.",
+      "evidence": "Transcript skeleton shows: Create Dockerfile -> Create boot-test.sh -> Create analyze-ppm.py -> Docker build -> Docker run -> Create verify-native-qemu.sh. The verification script was created after successful Docker run, not before."
+    },
+    {
+      "area": "conventions",
+      "observation": "The documented QEMU flags in docs/native-qemu-validation.md include `-no-reboot` which wasn't in the feature description's specified flags. AGENTS.md already documents the core TempleOS hardware requirements but doesn't mention -no-reboot. This could be added to AGENTS.md's 'Key Technical Details' section for consistency.",
+      "evidence": "Feature description specifies: -display none -monitor telnet:... -m 2048 -smp 1 -cdrom -boot d -rtc base=localtime. Implementation adds -no-reboot. docs/native-qemu-validation.md documents it with explanation 'Prevent automatic reboot on crash (aids debugging)'."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The worker discovered that TempleOS boots to full desktop within ~15 seconds under native QEMU TCG emulation. This boot timing is documented in docs/native-qemu-validation.md but not in .factory/library/architecture.md which only discusses the Wasm/browser architecture. The 15s native boot time vs expected 2-5 minutes Wasm boot time (mentioned in AGENTS.md) is useful reference knowledge for future workers.",
+      "evidence": "docs/native-qemu-validation.md: 'The OS reaches its full desktop/installer environment within ~15 seconds under TCG.' AGENTS.md says 'TempleOS boot takes ~2-5 minutes under Wasm/TCI.'"
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. All 5 expected behaviors are fully met: ISO downloaded at correct size, Docker QEMU runs 90+ seconds, screenshots captured with 9-10 distinct colors, working flags documented in docs/native-qemu-validation.md, and reference screenshot saved. The implementation is clean and well-structured with a Dockerfile, boot-test shell script, Python PPM analyzer, verification script, and comprehensive documentation. Visual inspection of the saved PNG confirms TempleOS V5.03 desktop with installer prompt. Four non-blocking issues noted: unused maxval variable, O(n²) PNG concatenation, undocumented -no-reboot flag addition, and netcat flag portability. None affect correctness or functionality."
+}

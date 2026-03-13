@@ -6,6 +6,7 @@ commands:
   typecheck: npm run typecheck
   lint: npm run lint
   qemu-build: docker build -t qemu-wasm-builder -f build/Dockerfile build/
+  package-assets: bash scripts/package-assets.sh
 
 services:
   web:

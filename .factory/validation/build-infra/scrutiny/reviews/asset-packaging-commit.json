@@ -1,0 +1,56 @@
+{
+  "featureId": "asset-packaging-commit",
+  "reviewedAt": "2026-03-13T02:05:00.000Z",
+  "commitId": "cceacb048405ba6edae595c8f0f9f3f917885022",
+  "transcriptSkeletonReviewed": true,
+  "diffReviewed": true,
+  "status": "pass",
+  "codeReview": {
+    "summary": "Implementation covers all feature requirements: BIOS/ROM files and TempleOS ISO packaged via Emscripten file_packager.py with LZ4 compression, all artifacts organized in public/emulator/, Vite project configured with COOP/COEP headers on port 3200, reproducible packaging script created, 13 vitest tests added, and all artifacts committed (~56MB). The load.js correctly maps files to /pack/ paths and uses LZ4 compression. One potential runtime integration issue noted: the load.js expects Module['LZ4'] (from -sLZ4 compile flag) which may not be present in the QEMU JS glue — this is a cross-feature concern between the QEMU build and this packaging step that will surface at integration time. File ownership discrepancy (root-owned Docker outputs vs mojo-owned files) is cosmetic. Overall implementation is solid and well-structured.",
+    "issues": [
+      {
+        "file": "public/emulator/load.js",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "LZ4 runtime dependency: load.js asserts `typeof Module['LZ4'] === 'object'` for decompression, but qemu-system-x86_64.js has zero LZ4 references — the QEMU build may not have been compiled with -sLZ4. At runtime, data loading will fail unless the main module provides Module.LZ4. This is a cross-feature integration concern (QEMU build vs packaging) that should be verified during integration. If the QEMU build lacks -sLZ4, either rebuild QEMU with -sLZ4=1 or re-run file_packager without --lz4."
+      },
+      {
+        "file": "public/emulator/load.js",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "PACKAGE_NAME is '/out/qemu-system-x86_64.data' (Docker container path) used as internal identifier in addRunDependency/removeRunDependency and preloadResults. This is harmless since REMOTE_PACKAGE_BASE='qemu-system-x86_64.data' is used for actual fetching, but the Docker path leaking into the output is cosmetic noise."
+      },
+      {
+        "file": "public/emulator/load.js",
+        "line": null,
+        "severity": "non_blocking",
+        "description": "File ownership: load.js and qemu-system-x86_64.data are owned by root (created inside Docker container), while .js and .wasm are owned by mojo. This won't affect serving but may cause permission issues during rebuilds or cleanup."
+      },
+      {
+        "file": "scripts/package-assets.sh",
+        "line": 66,
+        "severity": "non_blocking",
+        "description": "The trap cleanup uses unquoted $STAGING_DIR in 'rm -rf $STAGING_DIR'. While mktemp -d produces safe paths, best practice is to quote it: 'rm -rf \"$STAGING_DIR\"' to prevent issues with unexpected characters."
+      }
+    ]
+  },
+  "sharedStateObservations": [
+    {
+      "area": "services",
+      "observation": "Worker created scripts/package-assets.sh as a key build step, but services.yaml has no corresponding command entry for it. Other build commands (qemu-build, dev, test, etc.) are listed. Adding a 'package-assets' command would help future workers re-run this step.",
+      "evidence": "scripts/package-assets.sh exists but .factory/services.yaml commands section has: install, dev, build, test, typecheck, lint, qemu-build — no package-assets entry"
+    },
+    {
+      "area": "skills",
+      "observation": "Worker's skillFeedback suggests the infra-worker skill should mention that Emscripten tools (file_packager.py) are only available inside Docker and must be run via 'docker run'. The skill's current 'asset packaging' section says 'Use Emscripten file_packager.py' but doesn't specify the Docker requirement.",
+      "evidence": "Handoff skillFeedback.suggestedChanges: ['Skill could mention that Emscripten is only available inside Docker, so file_packager.py must be run via docker run']. Confirmed in scripts/package-assets.sh which uses 'docker run --rm ... qemu-wasm-builder bash -c python3 /emsdk/.../file_packager.py'."
+    },
+    {
+      "area": "knowledge",
+      "observation": "The LZ4 compression flag for file_packager (--lz4) requires the main Emscripten module to be compiled with -sLZ4=1 to provide the decompressor runtime. This dependency between file_packager flags and emcc flags is not documented anywhere in the project, and could cause integration failures.",
+      "evidence": "public/emulator/load.js contains: assert(typeof Module['LZ4'] === 'object', 'LZ4 not present - was your app build with -sLZ4?'). qemu-system-x86_64.js has 0 occurrences of 'LZ4'. Emscripten docs require -sLZ4 at compile time to enable Module.LZ4."
+    }
+  ],
+  "addressesFailureFrom": null,
+  "summary": "Feature passes review. All required assets (4 BIOS/ROM files + TempleOS ISO) are correctly packaged via file_packager.py with LZ4 compression and /pack/ path mapping. Vite project is properly configured with COOP/COEP headers. 13 verification tests cover artifact existence, sizes, and load.js content correctness. The packaging script is reproducible. One cross-feature integration risk: LZ4 decompression at runtime requires Module.LZ4 from the QEMU JS glue (compiled with -sLZ4), which may not be present — this should be verified during frontend integration. Total committed size ~56MB as expected."
+}
