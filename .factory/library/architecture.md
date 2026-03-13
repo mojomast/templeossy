@@ -1,0 +1,78 @@
+# Architecture
+
+Architectural decisions, patterns, and technical reference.
+
+**What belongs here:** System design decisions, component interactions, data flow, integration patterns.
+
+---
+
+## System Overview
+
+Browser-hosted full-system emulator (NOT a hypervisor) running TempleOS via QEMU compiled to WebAssembly.
+
+```
+┌─────────────────────────────────────────────────┐
+│ Browser (Chrome/Firefox)                        │
+│                                                 │
+│  Main Thread                    Web Worker      │
+│  ┌──────────────┐              ┌──────────────┐ │
+│  │ UI Controls  │              │ QEMU Wasm    │ │
+│  │ Canvas       │◄─ SharedAB ─►│ (x86_64)     │ │
+│  │ Input Handler│              │              │ │
+│  │ Storage Mgr  │              │ TempleOS     │ │
+│  └──────────────┘              │ (guest)      │ │
+│                                └──────────────┘ │
+│  OPFS / IndexedDB                               │
+│  ┌──────────────┐                               │
+│  │ Disk Image   │                               │
+│  └──────────────┘                               │
+└─────────────────────────────────────────────────┘
+```
+
+## Component Interactions
+
+### Display Pipeline
+1. QEMU VGA device writes to DisplaySurface (BGRX format)
+2. Custom display backend (ui/emscripten.c) exports framebuffer pointer via EMSCRIPTEN_KEEPALIVE
+3. JavaScript setInterval loop (~30ms) polls framebuffer dimensions and data pointer
+4. JS reads Wasm linear memory at the framebuffer pointer
+5. BGRX → RGBA conversion for canvas ImageData
+6. putImageData renders to canvas
+
+### Input Pipeline
+1. Browser keyboard events (keydown/keyup) captured on canvas container
+2. KeyboardEvent.code mapped to PS/2 scancode (Set 1)
+3. Exported C function _qemu_input_send_key(scancode, down) called
+4. QEMU routes to PS/2 keyboard device model
+5. TempleOS reads PS/2 input
+
+Mouse: similar flow via _qemu_input_send_mouse(dx, dy, buttons)
+
+### Persistence Pipeline
+1. QEMU writes to virtual disk via IDE device model
+2. Disk image stored in Emscripten virtual filesystem
+3. Periodically (30s) and on beforeunload, disk image flushed to OPFS
+4. On resume: disk image loaded from OPFS into Emscripten FS before QEMU starts
+
+## QEMU Configuration
+
+```
+-m 512M (or 1024M)
+-smp 1
+-cdrom /pack/TempleOS.ISO
+-boot d (or c for disk boot on resume)
+-vga std
+-display emscripten
+-rtc base=localtime
+-hda /pack/disk.img (writable virtual disk)
+-accel tcg,tb-size=500
+-nic none
+```
+
+## Key Design Decisions
+
+1. **ktock/qemu-wasm fork over upstream**: Fork has TCG JIT backend for better performance. Upstream only has TCI (interpreter).
+2. **Custom display backend over SDL**: Emscripten SDL exists but QEMU's SDL backend has threading conflicts with PROXY_TO_PTHREAD. Custom backend is simpler and proven by pebble-qemu-wasm.
+3. **setInterval over requestAnimationFrame**: rAF is hijacked by PROXY_TO_PTHREAD. setInterval works correctly from the main thread.
+4. **OPFS over IndexedDB**: OPFS has synchronous access in workers, better for large file I/O. IndexedDB is the fallback.
+5. **Bundle ISO in repo**: TempleOS ISO is 17MB, public domain. Bundling avoids CORS issues and external dependencies.

@@ -1,0 +1,16 @@
+commands:
+  install: npm install
+  dev: npm run dev
+  build: npm run build
+  test: npm test
+  typecheck: npm run typecheck
+  lint: npm run lint
+  qemu-build: docker build -t qemu-wasm-builder -f build/Dockerfile build/
+
+services:
+  web:
+    start: cd /home/mojo/projects/templeossy && npm run dev -- --port 3200
+    stop: lsof -ti :3200 | xargs kill 2>/dev/null || true
+    healthcheck: curl -sf http://localhost:3200
+    port: 3200
+    depends_on: []
